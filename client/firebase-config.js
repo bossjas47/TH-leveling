@@ -8,4 +8,4 @@ export const firebaseConfig = {
   appId: '1:889010905283:web:48f81fd28f7effa02d4276',
 };
 // URL ของ game server (เว้นว่าง = origin เดียวกัน; ตอนขึ้นจริงใส่ https://xxx.onrender.com)
-export const API = '';
+export const API = 'https://th-leveling.onrender.com';
