@@ -1,4 +1,5 @@
 import { maxHp, maxMp } from '/shared/formulas.js';
+import { JOB } from './ui.js';
 
 // login (Firebase Auth) → โหลด/สร้างตัวละคร (GDD §3). ?dev=Fighter ข้ามทั้งหมดเพื่อทดสอบ client อย่างเดียว
 const ui = document.getElementById('ui');
@@ -18,8 +19,9 @@ export async function ensureCharacter(B) {
   const auth = A.getAuth(initializeApp(firebaseConfig));
 
   const user = await new Promise((ok) => {
-    const form = h(`<h2>Thailand Leveling</h2><input id=e type=email placeholder=อีเมล><input id=p type=password placeholder="รหัสผ่าน (6+ ตัว)">
-      <p id=m class=err></p><button id=in>เข้าสู่ระบบ</button><button id=up class=alt>สมัครใหม่</button>`);
+    const form = h(`<div class=logo><b>THAILAND<br>LEVELING</b><small>ฮันเตอร์แห่งกรุงเทพฯ</small></div>
+      <input id=e type=email placeholder=อีเมล autocomplete=email><input id=p type=password placeholder="รหัสผ่าน (6 ตัวขึ้นไป)" autocomplete=current-password>
+      <p id=m class=err></p><button id=in class=cta>เข้าสู่ระบบ</button><button id=up class=alt>สมัครใหม่</button>`);
     const go = (fn) => async () => {
       try { ok((await fn(auth, form.querySelector('#e').value, form.querySelector('#p').value)).user); }
       catch (e) { form.querySelector('#m').textContent = e.code?.replace('auth/', '') ?? e.message; }
@@ -38,11 +40,12 @@ export async function ensureCharacter(B) {
 
   const a = B.appearance;
   const jobs = Object.entries(B.classes).map(([j, c]) =>
-    `<label class=job><input type=radio name=job value=${j} ${j === 'Fighter' ? 'checked' : ''}>${j}<small>STR ${c.str} AGI ${c.agi} VIT ${c.vit} INT ${c.int} PER ${c.per}</small></label>`).join('');
+    `<label class=job><input type=radio name=job value=${j} ${j === 'Fighter' ? 'checked' : ''}><div><span class=t><em>${JOB[j]?.icon ?? '⭐'}</em>${j}</span><p>${JOB[j]?.desc ?? ''}</p>
+      <span class=st>${['str', 'agi', 'vit', 'int', 'per'].map((k) => `<span>${k.toUpperCase()}</span><b style="width:${Math.min(100, c[k] * 5)}%"></b>`).join('')}</span></div></label>`).join('');
   const f = h(`<h2>สร้างตัวละคร</h2><input id=n maxlength=24 placeholder="ชื่อ (3–12 ตัวอักษร)">
-    <div class=row><label><input type=radio name=g value=male checked>ชาย</label><label><input type=radio name=g value=female>หญิง</label></div>
+    <div class=row><label class=seg><input type=radio name=g value=male checked><span>👨 ชาย</span></label><label class=seg><input type=radio name=g value=female><span>👩 หญิง</span></label></div>
     <div class=jobs>${jobs}</div>
-    <p id=m class=err></p><button id=ok>ปลุกพลัง</button>`);
+    <p id=m class=err></p><button id=ok class=cta>⚡ ปลุกพลัง</button>`);
   const q = (s) => f.querySelector(s);
   return new Promise((done) => {
     q('#ok').onclick = async () => {

@@ -4,15 +4,34 @@ import { makeGateE } from '/shared/gate.js';
 import { ensureCharacter } from './account.js';
 import { createWorld } from './world3d.js';
 import { API } from './firebase-config.js';
+import { JOB, SKILL_ICON } from './ui.js';
 
 const B = await (await fetch('/shared/balance.json')).json();
 const me = await ensureCharacter(B);
-document.getElementById('ui').style.display = 'none';
+document.getElementById('ui').style.display = 'none'; document.getElementById('hud').style.display = 'flex';
 
 let MAP = LOBBY_ROWS, N = LOBBY_ROWS.length, gmap = makeMap(MAP); // แผนที่ปัจจุบัน (สลับตามห้อง)
 
 
 const player = { ...SPAWN, speed: moveSpeed(B, me.agi), job: me.job, look: me, face: 0 };
+
+// ---------- เอฟเฟกต์สกิล (pixelfx): สกิล → sprite sheet ใน assets/fx/ ----------
+const SKILL_FX = { slash: { fx: 'double-slash', at: 'target' }, whirlwind: { fx: 'heavy-cleave', at: 'self', scale: 1.1 }, stab: { fx: 'dagger-flurry', at: 'target' },
+  shadow_step: { fx: 'blink-in', at: 'self' }, fireball: { fx: 'fireball', at: 'proj' }, ice_nova: { fx: 'frost-nova', at: 'self', scale: 1.1 }, shield_bash: { fx: 'blunt-hit', at: 'target', scale: 1.2 },
+  heal: { fx: 'heal-aoe', at: 'target', scale: 0.8 }, revive: { fx: 'resurrection', at: 'target', scale: 0.8 }, pick_strike: { fx: 'blunt-hit', at: 'target' } };
+let lastCast = null; // { id, x, y } ตำแหน่งเป้าหมายตอนกดสกิล — เล่นเอฟเฟกต์เมื่อ server ตอบรับ
+const fxAt = (id, x, y, o) => world.vfx.play(id, x, y, o);
+const faceRight = (dx, dy) => { const [fx, fz] = world.forward; return dx * -fz + dy * fx >= 0; }; // เป้าอยู่ขวาของกล้อง → ไม่ต้องกลับด้าน sprite
+function playSkillFx(id) {
+  const d = SKILL_FX[id], c = lastCast?.id === id ? lastCast : null; if (!d) return;
+  const tx = c?.x ?? player.x, ty = c?.y ?? player.y;
+  if (d.at === 'self') return fxAt(d.fx, player.x, player.y, { scale: d.scale });
+  if (d.at === 'proj') { // ลูกไฟบินไปหาเป้า แล้วระเบิดเป็นประกายกระทบ
+    fxAt(d.fx, player.x, player.y, { h: 0.9, scale: 0.55, to: [tx, ty], speed: 4, flip: !faceRight(tx - player.x, ty - player.y) });
+    return void setTimeout(() => fxAt('hit-spark', tx, ty, { h: 0.6, scale: 0.8 }), 280);
+  }
+  fxAt(d.fx, tx, ty, { h: 0.1, scale: d.scale ?? 0.9, flip: !faceRight(tx - player.x, ty - player.y) });
+}
 
 // ---------- Network: server ตัดสินตำแหน่งจริง, client ทำนายตัวเอง + แก้เมื่อคลาดเกิน 1 tile ----------
 // shortcut: ไม่ reconnect อัตโนมัติ (ขึ้นข้อความแล้วให้รีเฟรช), ก่อนเปิดจริงเพิ่ม reconnect + input sequence
@@ -41,6 +60,7 @@ function connect() { // เชื่อมต่อหลังโหลดภ�
     if (m.t === 'party') { party = m.members; renderPanel(); }
     if (m.t === 'pinvited') panel(() => ({ title: 'คำเชิญปาร์ตี้', info: `${m.name} ชวนเข้าปาร์ตี้`, rows: [{ label: 'เข้าร่วม', fn: () => sendMsg({ t: 'paccept' }), close: true }] }));
     if (m.t === 'chat') { chatLog.push({ text: `${m.ch === 'p' ? '[ปาร์ตี้] ' : ''}${m.name}: ${m.text}`, at: performance.now(), p: m.ch === 'p' }); if (chatLog.length > 6) chatLog.shift(); const o = m.id === myId ? player : others.get(m.id); if (o) { o.say = m.text; o.sayUntil = performance.now() + B.chat.bubble_sec * 1000; } }
+    if (m.t === 'levelup') fxAt('level-up', player.x, player.y, { scale: 0.7 });
     if (m.t === 'levelup') toast(`เลเวลอัป! Lv.${m.level} (+${B.stat_points_per_level} แต้ม — กด C)`, 4000, true);
     if (m.t === 'bought') toast('ซื้อแล้ว', 1500);
     if (m.t === 'enhanced') toast(`ตีบวกสำเร็จ +${m.level}`, 3000, true);
@@ -54,16 +74,17 @@ function connect() { // เชื่อมต่อหลังโหลดภ�
     }
     if (m.t === 'notice') toast(m.text);
     if (m.t === 'loot') toast(`+ ${m.name}`, 1800);
+    if (m.t === 'sold') fxAt('coin-drop', player.x, player.y, { scale: 0.7 });
     if (m.t === 'sold') toast(`ขายของได้ ฿${m.total.toLocaleString()}`, 3000, true);
     if (m.t === 'cleared') toast(`Gate Clear!  +${m.exp.toLocaleString()} EXP  +฿${m.bonus.toLocaleString()}`, 4500, true);
     if (m.t === 'gateFailed') toast('Gate หมดเวลา', 3500, true);
     if (m.t === 'rankResult') toast(m.passed ? `สอบผ่าน! แรงค์ ${m.rank}` : `สอบไม่ผ่าน (${m.burst}/${m.need})`, 4500, true);
     if (m.t === 'nodeHit') { const n = nodes.get(m.id); if (n) n.flash = performance.now(); }
     if (m.t === 'look') looks.set(m.id, m.look);
-    if (m.t === 'skill') cds[m.skill] = performance.now() + m.cd * 1000;
+    if (m.t === 'skill') { cds[m.skill] = performance.now() + m.cd * 1000; playSkillFx(m.skill); }
     if (m.t === 'assisting') assisting = performance.now() + m.sec * 1000;
     if (m.t === 'assistCancel') assisting = 0;
-    if (m.t === 'hit') { const t = mobs.get(m.id); if (t) { t.flash = performance.now(); fx.push({ x: t.x, y: t.y, v: m.v, crit: m.crit, t: performance.now() }); } }
+    if (m.t === 'hit') { const t = mobs.get(m.id); if (t) { t.flash = performance.now(); fxAt(m.crit ? 'crit-hit' : 'hit-spark', t.x, t.y, { h: 0.55, scale: m.crit ? 0.8 : 0.6 }); fx.push({ x: t.x, y: t.y, v: m.v, crit: m.crit, t: performance.now() }); } }
     if (m.t === 'hello') { myId = m.id; player.x = m.x; player.y = m.y; }
     if (m.t !== 's') return;
     const seen = new Set();
@@ -85,7 +106,7 @@ function connect() { // เชื่อมต่อหลังโหลดภ�
       ms.add(id); const o = mobs.get(id);
       if (o) Object.assign(o, { tx: x, ty: y, hp, max, face }); else mobs.set(id, { x, y, tx: x, ty: y, hp, max, kind, face });
     }
-    for (const id of mobs.keys()) if (!ms.has(id)) mobs.delete(id);
+    for (const [id, o] of mobs) if (!ms.has(id)) { if (o.kind !== 2) fxAt('poof', o.x, o.y, { scale: o.kind === 1 ? 1.6 : 0.8 }); mobs.delete(id); } // มอนตาย = ควันป๊อก
     const ns = new Set();
     for (const [id, x, y, hp, max] of m.n ?? []) { ns.add(id); const o = nodes.get(id); if (o) Object.assign(o, { hp }); else nodes.set(id, { x, y, hp, max }); }
     for (const id of nodes.keys()) if (!ns.has(id)) nodes.delete(id);
@@ -98,6 +119,17 @@ function sendInput(dx, dy, now) {
   lastSent = [dx, dy]; lastSentAt = now;
 }
 
+// ---------- หมอก + หิ่งห้อยทับจอใน Gate (pixelfx weather/fog, weather/fireflies 320×180 วนลูป) ----------
+const wx = document.getElementById('wx'), wg = wx.getContext('2d');
+let wxs = null, wxFrame = -1;
+Promise.all(['fog', 'fireflies'].map(async (id) => { const m = await (await fetch(`assets/fx/${id}.json`)).json(), img = new Image(); img.src = `assets/fx/${id}.png`; await img.decode(); return { m, img }; })).then((v) => { wxs = v; }).catch(() => {});
+function drawWeather(T) {
+  if (!wxs || wx.style.display === 'none') return;
+  const f = Math.floor((T / 1000) * wxs[0].m.fps) % wxs[0].m.n; if (f === wxFrame) return; wxFrame = f; // วาดใหม่เมื่อเฟรมเปลี่ยนเท่านั้น (10 fps)
+  wg.clearRect(0, 0, 320, 180);
+  for (const { m, img } of wxs) wg.drawImage(img, (f % m.cols) * m.w, Math.floor(f / m.cols) * m.h, m.w, m.h, 0, 0, 320, 180);
+}
+
 // ---------- โลก 3D (Three.js) + สลับแผนที่ตามห้องที่ server บอก ----------
 const world = await createWorld(document.getElementById('gl'), B);
 let view = 'lobby';
@@ -105,6 +137,7 @@ function setView(kind) {
   const gate = kind === 'gate_e';
   MAP = gate ? makeGateE({ seed: B.gate_e.seed, mobs: B.gate_e.mobs, nodes: B.gate_e.nodes }).rows : LOBBY_ROWS;
   N = MAP.length; gmap = makeMap(MAP); view = gate ? 'gate_e' : 'lobby';
+  wx.style.display = gate ? 'block' : 'none';
   world.setMap(view, MAP); world.setSolid((x, y) => gmap.solid(x, y)); // กล้องใช้กริดชนเดียวกับเกม
 }
 setView('lobby');
@@ -134,7 +167,7 @@ const buttons = () => { // ปุ่มบนจอ: โจมตี, สกิ�
   const cx = ctxAction(); if (cx) b.push({ id: 'ctx', x: W - 265, y: H - 60, r: 36, label: cx.label, key: 'F', msg: cx.msg });
   if (downedNear()) b.push({ id: 'assist', x: W - 120, y: H - 170, r: 28, label: 'พยุง', key: 'E' });
   if (inviteTarget()) b.push({ id: 'invite', x: W - 265, y: H - 140, r: 26, label: 'ชวน', key: 'G' });
-  b.push({ id: 'char', x: 28, y: 86, r: 18, label: stats.statPoints ? `+${stats.statPoints}` : 'ตัว' }, { id: 'chat', x: 72, y: 86, r: 18, label: 'แชต' });
+  b.push({ id: 'char', x: W - 34, y: 36, r: 20, label: stats.statPoints ? `+${stats.statPoints}` : 'ตัว' }, { id: 'chat', x: W - 84, y: 36, r: 20, label: 'แชต' }); // มุมขวาบน ไม่ชน HUD
   return b;
 };
 function ctxAction() { // ปุ่มตามบริบท: ประตู Gate / ตลาด / สมาคม / ออกจาก Gate
@@ -154,14 +187,16 @@ const ui = document.getElementById('ui'), chatBox = document.getElementById('cha
 let panelFn = null; // ฟังก์ชันสร้างเนื้อหาหน้าต่างที่เปิดอยู่ — เรียกซ้ำเมื่อข้อมูลจาก server เปลี่ยน
 const sendMsg = (o) => ws?.readyState === 1 && ws.send(JSON.stringify(o));
 function panel(fn) { panelFn = fn; renderPanel(); }
-function closePanel() { panelFn = null; ui.style.display = 'none'; }
+function closePanel() { panelFn = null; ui.style.display = 'none'; ui.classList.remove('over'); }
 function renderPanel() {
   if (!panelFn) return;
   const { title, info = '', rows } = panelFn();
-  ui.innerHTML = '<div class="card"><h2></h2><div class="info"></div><div class="rows"></div><button class="alt">ปิด</button></div>';
+  ui.classList.add('over');
+  ui.innerHTML = '<div class="card"><button class="x" aria-label="ปิด">✕</button><h2></h2><div class="info"></div><div class="rows"></div><button class="alt">ปิด (Esc)</button></div>';
+  ui.firstChild.onclick = (e) => e.stopPropagation(); ui.onclick = (e) => e.target === ui && closePanel(); // แตะพื้นหลัง = ปิด
   ui.querySelector('h2').textContent = title; ui.querySelector('.info').textContent = info;
   for (const r of rows) { const b = document.createElement('button'); b.textContent = r.label; b.disabled = !!r.off; b.onclick = () => { r.fn(); if (r.close) closePanel(); }; ui.querySelector('.rows').append(b); }
-  ui.querySelector('button.alt').onclick = closePanel; ui.style.display = 'flex';
+  ui.querySelector('button.alt').onclick = ui.querySelector('button.x').onclick = closePanel; ui.style.display = 'flex';
 }
 const baht = (n) => '฿' + Math.round(n).toLocaleString(), have = (id) => stats.items[id] ?? 0;
 const marketPanel = () => ({ title: 'ตลาด', info: `เงิน ${baht(stats.baht)}`, rows: [
@@ -212,6 +247,7 @@ function press(id) {
   else if (k.kind === 'revive') target = near([...others].filter(([, o]) => o.down), k.range);
   if (['single', 'teleport_strike', 'revive'].includes(k.kind) && !target) return;
   const tm = mobs.get(target) ?? others.get(target); if (tm) faceTo(tm);
+  lastCast = { id, x: tm?.x ?? player.x, y: tm?.y ?? player.y };
   ws.send(JSON.stringify({ t: 'cast', skill: id, id: target })); player.atkStart = performance.now();
 }
 canvas.addEventListener('pointerdown', (e) => {
@@ -296,30 +332,23 @@ function draw(dt, T) {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, innerWidth, innerHeight);
   for (const l of world.labels()) if (view === 'lobby') label(l.text, world.project(l.x, l.y, l.h), { size: 13, color: '#ffe9a8' });
   if (view === 'lobby') for (const [gx, gy] of B.places.gates) label('Gate E', world.project(gx, gy, 1.55), { color: '#9dffb8' });
-  for (const o of others.values()) label(o.name, world.project(o.x, o.y, 1.0), party.some((m) => m[0] === o.id) ? { color: '#9fd0ff' } : {});
-  for (const o of [player, ...others.values()]) if (o.sayUntil > T) label(o.say.slice(0, 40), world.project(o.x, o.y, 1.22), { color: '#ffe9a8' }); // ฟองคำพูด 5 วิ
+  for (const o of others.values()) label(o.name, world.project(o.x, o.y, 1.85), party.some((m) => m[0] === o.id) ? { color: '#9fd0ff' } : {});
+  for (const o of [player, ...others.values()]) if (o.sayUntil > T) label(o.say.slice(0, 40), world.project(o.x, o.y, 2.1), { color: '#ffe9a8' }); // ฟองคำพูด 5 วิ
   for (const m of mobs.values()) { // แถบเลือดมอนธรรมดา (บอสมีแถบใหญ่ด้านบน)
-    if (m.kind) continue; const p = world.project(m.x, m.y, 0.78); if (!p) continue;
-    ctx.fillStyle = '#400'; ctx.fillRect(p[0] - 12, p[1], 24, 4); ctx.fillStyle = '#e33'; ctx.fillRect(p[0] - 12, p[1], 24 * m.hp / m.max, 4);
+    if (m.kind) continue; const p = world.project(m.x, m.y, 0.88); if (!p) continue;
+    pill(p[0] - 15, p[1], 30, 5, m.hp / m.max, ['#ff8a6b', '#d33']);
   }
   for (let i = fx.length - 1; i >= 0; i--) { // ตัวเลขดาเมจลอย
     const f = fx[i], a = (nowT - f.t) / 800;
     if (a >= 1) { fx.splice(i, 1); continue; }
-    ctx.globalAlpha = 1 - a; label(String(f.v), world.project(f.x, f.y, 0.7 + a * 0.45), { size: f.crit ? 17 : 13, color: f.crit ? '#ffd23f' : '#fff' }); ctx.globalAlpha = 1;
+    const pop = 1 + Math.max(0, 1 - a * 7) * 0.7; // เด้งใหญ่ตอนโดนแล้วหดลง
+    ctx.globalAlpha = Math.min(1, 2.2 - a * 2.2); label(f.crit ? `✦ ${f.v} ✦` : String(f.v), world.project(f.x, f.y, 0.7 + a * 0.5), { size: (f.crit ? 20 : 14) * pop, color: f.crit ? '#ffd23f' : '#fff' }); ctx.globalAlpha = 1;
   }
   // joystick
   ctx.setTransform(devicePixelRatio || 1, 0, 0, devicePixelRatio || 1, 0, 0);
   if (ws) { // ปุ่ม + แถบ HP/MP/EXP
     ctx.textAlign = 'center';
-    for (const b of buttons()) {
-      const cd = b.skill ? Math.max(0, ((cds[b.id] ?? 0) - nowT) / 1000) : 0, active = b.id === 'atk' && atkHeld;
-      ctx.fillStyle = b.id === 'atk' ? (active ? 'rgba(230,70,70,.85)' : 'rgba(200,50,50,.55)') : b.id === 'potion' ? 'rgba(50,110,200,.65)' : b.id === 'assist' ? 'rgba(60,160,90,.8)' : 'rgba(90,60,160,.65)';
-      ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, 7); ctx.fill();
-      if (cd > 0) { ctx.fillStyle = 'rgba(0,0,0,.6)'; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, 7); ctx.fill(); }
-      ctx.fillStyle = '#fff'; ctx.font = `bold ${b.r > 35 ? 15 : 12}px system-ui`; ctx.fillText(cd > 0 ? Math.ceil(cd) : b.label, b.x, b.y + 4);
-      if (b.key) { ctx.font = '10px system-ui'; ctx.fillStyle = 'rgba(255,255,255,.7)'; ctx.fillText(b.id === 'potion' ? `${b.key} ×${stats.potions}` : b.key, b.x, b.y + b.r - 6); }
-    }
-    bar(10, 28, 160, 10, stats.hp / stats.max, '#d33'); bar(10, 40, 160, 8, stats.mp / stats.maxMp, '#3a7bd5'); bar(10, 50, 160, 5, stats.exp / stats.next, '#e0b04a'); bar(10, 57, 160, 4, stats.fatigue / 100, stats.fatigue >= B.fatigue.exhausted_at ? '#e33' : '#8a9');
+    for (const b of buttons()) drawButton(b, nowT);
     chatLog.forEach((c, i) => { if (nowT - c.at > 15000) return; ctx.textAlign = 'left'; ctx.font = '12px system-ui'; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,.7)'; const y = 120 + i * 16; ctx.strokeText(c.text, 10, y); ctx.fillStyle = c.p ? '#9fd0ff' : '#fff'; ctx.fillText(c.text, 10, y); });
     ctx.textAlign = 'center';
     if (assisting > nowT) { bar(innerWidth / 2 - 60, innerHeight / 2 + 30, 120, 8, 1 - (assisting - nowT) / (B.downed.assist.channel_sec * 1000), '#3c9'); ctx.fillStyle = '#fff'; ctx.fillText('กำลังพยุง...', innerWidth / 2, innerHeight / 2 + 26); }
@@ -331,37 +360,90 @@ function draw(dt, T) {
     } else giveup.style.display = 'none';
   }
   const boss = [...mobs.values()].find((m) => m.kind === 1 && Math.hypot(m.x - player.x, m.y - player.y) < 14); // แถบเลือดบอส (เมื่ออยู่ใกล้)
-  if (boss) { const w = Math.min(320, innerWidth * 0.4), x0 = (innerWidth - w) / 2; bar(x0, 52, w, 12, boss.hp / boss.max, '#c33'); ctx.fillStyle = '#fff'; ctx.font = 'bold 13px system-ui'; ctx.textAlign = 'center'; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,.7)'; ctx.strokeText('Goblin Chief', innerWidth / 2, 48); ctx.fillText('Goblin Chief', innerWidth / 2, 48); }
+  if (boss) {
+    const w = Math.min(380, innerWidth * 0.46), x0 = (innerWidth - w) / 2, y0 = 22 + 0;
+    plate(x0 - 12, y0 - 18, w + 24, 40, 14, 'rgba(14,16,28,.82)', 'rgba(232,194,90,.55)');
+    ctx.textAlign = 'center'; ctx.font = 'bold 13px system-ui'; ctx.fillStyle = '#ffe08a'; ctx.fillText('👑 Goblin Chief', innerWidth / 2, y0 - 3);
+    pill(x0, y0 + 2, w, 10, boss.hp / boss.max, ['#ff8a6b', '#c42a2a']);
+  }
   for (let i = toasts.length - 1; i >= 0; i--) if (toasts[i].until < nowT) toasts.splice(i, 1);
-  toasts.slice(-4).forEach((tt, i) => { // ข้อความแจ้งเตือนกลางบน
-    ctx.font = `bold ${tt.big ? 22 : 14}px system-ui`; ctx.textAlign = 'center'; ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(0,0,0,.8)';
-    const y = (boss ? 90 : 70) + i * (tt.big ? 30 : 22); ctx.strokeText(tt.text, innerWidth / 2, y); ctx.fillStyle = tt.big ? '#ffe08a' : '#fff'; ctx.fillText(tt.text, innerWidth / 2, y);
+  toasts.slice(-4).forEach((tt, i) => { // ข้อความแจ้งเตือนกลางบน: แผ่นกระจก (ทองถ้าเรื่องใหญ่) + เลื่อนเข้า/จางออก
+    const age = tt.until - nowT, life = tt.life ?? (tt.life = age), a = Math.min(1, (life - age) / 160, age / 300);
+    ctx.font = `bold ${tt.big ? 20 : 14}px system-ui`; const tw = ctx.measureText(tt.text).width, w = tw + (tt.big ? 44 : 28), h = tt.big ? 38 : 28;
+    const y = (boss ? 82 : 64) + i * (h + 6) - (1 - a) * 8;
+    ctx.globalAlpha = Math.max(0, a); plate((innerWidth - w) / 2, y, w, h, h / 2, tt.big ? 'rgba(46,34,8,.88)' : 'rgba(14,16,28,.82)', tt.big ? '#e8c25a' : 'rgba(255,255,255,.18)', tt.big);
+    ctx.textAlign = 'center'; ctx.fillStyle = tt.big ? '#ffe9a0' : '#fff'; ctx.fillText(tt.text, innerWidth / 2, y + h / 2 + (tt.big ? 7 : 5)); ctx.globalAlpha = 1;
   });
-  if (stick.id !== null) {
-    ctx.strokeStyle = 'rgba(255,255,255,.4)'; ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.arc(stick.ox, stick.oy, JR, 0, 7); ctx.stroke();
-    ctx.fillStyle = 'rgba(255,255,255,.5)'; ctx.beginPath(); ctx.arc(stick.x, stick.y, 22, 0, 7); ctx.fill();
+  if (stick.id !== null) { // joystick ลอย: วงนอกไล่เฉด + ปุ่มกลางเรืองแสง
+    const g = ctx.createRadialGradient(stick.ox, stick.oy, JR * 0.3, stick.ox, stick.oy, JR); g.addColorStop(0, 'rgba(255,255,255,.04)'); g.addColorStop(1, 'rgba(255,255,255,.2)');
+    ctx.fillStyle = g; ctx.strokeStyle = 'rgba(255,255,255,.45)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(stick.ox, stick.oy, JR, 0, 7); ctx.fill(); ctx.stroke();
+    ctx.shadowColor = 'rgba(255,255,255,.6)'; ctx.shadowBlur = 14; ctx.fillStyle = 'rgba(255,255,255,.75)'; ctx.beginPath(); ctx.arc(stick.x, stick.y, 20, 0, 7); ctx.fill(); ctx.shadowBlur = 0;
   }
 }
 
-const hud = document.getElementById('hud');
+const hud = document.getElementById('hud'), $ = (id) => document.getElementById(id);
+const hudSet = (el, k, v) => { if (el._k !== v) { el._k = v; el[k] = v; } };
+function updateHud() { // HUD แบบ DOM: อัปเดตเฉพาะค่าที่เปลี่ยน
+  hudSet($('nm'), 'textContent', me.username); hudSet($('av'), 'textContent', JOB[me.job]?.icon ?? '⭐'); hudSet($('lv'), 'textContent', stats.level); hudSet($('rk'), 'textContent', stats.rank);
+  const f = (v, m) => Math.max(0, Math.min(100, (v / (m || 1)) * 100)).toFixed(1) + '%';
+  hudSet($('bhp').style, 'width', f(stats.hp, stats.max)); hudSet($('thp'), 'textContent', `${Math.max(0, Math.round(stats.hp))} / ${stats.max}`);
+  hudSet($('bmp').style, 'width', f(stats.mp, stats.maxMp)); hudSet($('tmp'), 'textContent', `${Math.round(stats.mp)} / ${stats.maxMp}`);
+  hudSet($('bxp').style, 'width', f(stats.exp, stats.next)); hudSet($('bfi').style, 'width', f(stats.fatigue ?? 0, 100));
+  $('bft').classList.toggle('hot', (stats.fatigue ?? 0) >= B.fatigue.exhausted_at); hudSet($('cb'), 'textContent', baht(stats.baht));
+}
+function updateInfo(fps) { // ข้อความรอง: ห้อง/ตัวจับเวลา Gate/จำนวนคน/สถานะ/fps (อัปเดต 2 ครั้ง/วิ)
+  const left = room.expiresAt && room.kind === 'gate_e' ? ' ⏳ ' + new Date(Math.max(0, room.expiresAt - Date.now())).toISOString().slice(11, 19) : '';
+  hudSet($('cz'), 'textContent', `📍 ${room.name || 'bkk_lobby'}${left}`);
+  hudSet($('ci'), 'textContent', `${fps} fps${ws ? ` · ออนไลน์ ${others.size + 1}` : ''}${status ? ' · ' + status : ''}`);
+}
+function plate(x, y, w, h, r, fill, stroke, glow) { // แผ่นโค้งมนพื้นกระจก
+  ctx.save(); if (glow) { ctx.shadowColor = 'rgba(232,194,90,.5)'; ctx.shadowBlur = 16; }
+  ctx.beginPath(); ctx.roundRect(x, y, w, h, r); ctx.fillStyle = fill; ctx.fill(); ctx.shadowBlur = 0; ctx.strokeStyle = stroke; ctx.lineWidth = 1.5; ctx.stroke(); ctx.restore();
+}
+function pill(x, y, w, h, f, [c1, c2]) { // แถบค่าแบบไล่เฉด
+  ctx.fillStyle = 'rgba(0,0,0,.6)'; ctx.beginPath(); ctx.roundRect(x - 1, y - 1, w + 2, h + 2, (h + 2) / 2); ctx.fill();
+  const fw = w * Math.min(1, Math.max(0, f)); if (fw < 1) return;
+  const g = ctx.createLinearGradient(0, y, 0, y + h); g.addColorStop(0, c1); g.addColorStop(1, c2); ctx.fillStyle = g; ctx.beginPath(); ctx.roundRect(x, y, fw, h, h / 2); ctx.fill();
+}
+const RING = { atk: ['#ff6a5a', '#8d1d1d'], potion: ['#6fb4ff', '#1f4fa8'], assist: ['#7ee2a8', '#1d7a4a'], ctx: ['#ffe08a', '#a8741a'], invite: ['#8fd0ff', '#2c5f9a'], skill: ['#b89bff', '#4b2a9a'], ui: ['#9aa3b8', '#363c52'] };
+function drawButton(b, T) { // ปุ่มบนจอ: แผ่นกลมกระจก + ไอคอน + วงคูลดาวน์ + ป้ายคีย์
+  const cd = b.skill ? Math.max(0, ((cds[b.id] ?? 0) - T) / 1000) : 0, active = b.id === 'atk' && atkHeld, [c1, c2] = RING[b.skill ? 'skill' : b.id === 'char' || b.id === 'chat' ? 'ui' : b.id] ?? RING.ui;
+  const r = b.r * (active ? 0.93 : 1);
+  ctx.save(); ctx.shadowColor = 'rgba(0,0,0,.55)'; ctx.shadowBlur = 10; ctx.shadowOffsetY = 3;
+  const g = ctx.createRadialGradient(b.x - r * 0.3, b.y - r * 0.4, r * 0.1, b.x, b.y, r); g.addColorStop(0, c1 + (active ? 'ff' : 'cc')); g.addColorStop(1, c2 + 'ee');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(b.x, b.y, r, 0, 7); ctx.fill(); ctx.restore();
+  ctx.lineWidth = 2.5; ctx.strokeStyle = active ? '#fff' : 'rgba(255,255,255,.55)'; ctx.beginPath(); ctx.arc(b.x, b.y, r - 1, 0, 7); ctx.stroke();
+  ctx.textAlign = 'center'; ctx.font = `${Math.round(r * 0.95)}px system-ui, "Apple Color Emoji", "Noto Color Emoji", sans-serif`; ctx.fillStyle = '#fff';
+  ctx.globalAlpha = cd > 0 ? 0.45 : 1; ctx.fillText(SKILL_ICON[b.id] ?? '✨', b.x, b.y + r * 0.33); ctx.globalAlpha = 1;
+  if (cd > 0) { // วงคูลดาวน์หมุนตามเข็ม + ตัวเลขวินาที
+    const frac = Math.min(1, cd / (b.skill.cd || cd));
+    ctx.fillStyle = 'rgba(5,8,18,.62)'; ctx.beginPath(); ctx.moveTo(b.x, b.y); ctx.arc(b.x, b.y, r - 1, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * frac); ctx.closePath(); ctx.fill();
+    ctx.font = `bold ${Math.round(r * 0.7)}px system-ui`; ctx.fillStyle = '#fff'; ctx.strokeStyle = 'rgba(0,0,0,.8)'; ctx.lineWidth = 3; const t = cd >= 10 ? Math.ceil(cd) : cd.toFixed(1); ctx.strokeText(t, b.x, b.y + r * 0.25); ctx.fillText(t, b.x, b.y + r * 0.25);
+  }
+  if (b.key) { // ป้ายคีย์มุมขวาบน (potion แสดงจำนวนที่เหลือ)
+    const t = b.id === 'potion' ? `${b.key}·${stats.potions}` : String(b.key); ctx.font = 'bold 10px system-ui'; const w = Math.max(16, ctx.measureText(t).width + 8);
+    plate(b.x + r * 0.55 - w / 2, b.y - r * 0.95, w, 15, 7.5, 'rgba(10,12,24,.88)', 'rgba(255,255,255,.35)'); ctx.fillStyle = '#fff'; ctx.fillText(t, b.x + r * 0.55, b.y - r * 0.95 + 11);
+  }
+  if (b.label && !b.skill && b.id !== 'atk') { ctx.font = 'bold 10px system-ui'; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,.85)'; ctx.fillStyle = '#fff'; ctx.strokeText(b.label, b.x, b.y + r + 12); ctx.fillText(b.label, b.x, b.y + r + 12); }
+}
 const giveup = document.getElementById('giveup');
 giveup.onclick = () => ws?.send(JSON.stringify({ t: 'giveup' }));
-function bar(x, y, w, h, f, color) {
+function bar(x, y, w, h, f, color) { // (เหลือไว้ใช้แถบพยุง)
   ctx.fillStyle = 'rgba(0,0,0,.6)'; ctx.fillRect(x, y, w, h); ctx.fillStyle = color; ctx.fillRect(x, y, w * Math.min(1, Math.max(0, f)), h);
 }
 let last = performance.now(), fps = 0, acc = 0, frames = 0, slowFor = 0;
 const autoQ = !new URLSearchParams(location.search).has('q'); // ไม่บังคับคุณภาพ → ลดเองเมื่อ FPS ต่ำต่อเนื่อง 3 วิ (เงา → ของตกแต่ง → พิกเซลเรโช)
 function loop(t) {
   const dt = (t - last) / 1000; last = t;
-  step(dt, t); draw(dt, t);
+  step(dt, t); draw(dt, t); drawWeather(t); updateHud();
   acc += dt; frames++;
   if (acc >= 0.5) { fps = Math.round(frames / acc); acc = frames = 0;
     slowFor = autoQ && t > 4000 && fps < 26 ? slowFor + 0.5 : 0;
     if (slowFor >= 3 && world.quality > 0) { world.setQuality(world.quality - 1); slowFor = 0; toast('ปรับกราฟิกให้เบาลง', 2500); }
-    hud.textContent = `${me.username} · ${me.job} Lv.${stats.level} · HP ${stats.hp}/${stats.max} MP ${Math.round(stats.mp)}/${stats.maxMp} · Rank ${stats.rank} · ${baht(stats.baht)} · ${room.name || 'bkk_lobby'}${room.expiresAt && room.kind === 'gate_e' ? ' ' + new Date(Math.max(0, room.expiresAt - Date.now())).toISOString().slice(11, 19) : ''} · ${fps} fps${ws ? ` · ออนไลน์ ${others.size + 1} คน` : ''}${status ? ' · ' + status : ''}`; }
+    updateInfo(fps); }
   requestAnimationFrame(loop);
 }
+world.vfx.preload(['hit-spark', 'crit-hit', 'poof', ...new Set(SKILLS.map((k) => SKILL_FX[k.id]?.fx).filter(Boolean))]);
 requestAnimationFrame((t) => { loop(t); connect(); }); // เชื่อมต่อหลังวาดเฟรมแรกเสร็จ: เฟรมแรกคอมไพล์ shader นานหลายวิบนเครื่องช้า ถ้าต่อก่อน server จะตัดเพราะ auth ไม่ทัน
 
 window.__game = { player, solid: (x, y) => gmap.solid(x, y), step, get MAP() { return MAP; }, others, mobs, nodes, stats, me, world, get view() { return view; } }; // สำหรับทดสอบอัตโนมัติ

@@ -4,6 +4,7 @@ import { extname, join, normalize } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { readFileSync } from 'node:fs';
 import { openDb } from './db.js';
+import { withD1 } from './d1sync.js';
 import { makeVerifier } from './auth.js';
 import { makeApi } from './api.js';
 import { attachWorld } from './world.js';
@@ -36,6 +37,13 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const port = process.env.PORT ?? 3000;
   const projectId = process.env.FIREBASE_PROJECT_ID ?? 'astra-892a8'; // Firebase project (ค่าสาธารณะ) — เปลี่ยนด้วย env ได้
   const verify = projectId ? makeVerifier(projectId) : async () => { throw new Error('no FIREBASE_PROJECT_ID'); };
-  const api = makeApi({ db: openDb(), verify, B, origin: process.env.ALLOWED_ORIGIN ?? '*' });
+  const db = openDb();
+  if (process.env.D1_GATEWAY_URL) { // เก็บถาวรลง Cloudflare D1 (ดู db-gateway/ และ README)
+    withD1(db, { url: process.env.D1_GATEWAY_URL.replace(/\/$/, ''), token: process.env.D1_GATEWAY_TOKEN ?? '' });
+    console.log('D1 โหลดข้อมูล:', await db.d1.hydrate());
+    const bye = async () => { await db.d1.flush(); process.exit(0); }; // Render ส่ง SIGTERM ก่อนปิด
+    process.on('SIGTERM', bye); process.on('SIGINT', bye);
+  } else console.warn('⚠️ ไม่ได้ตั้ง D1_GATEWAY_URL — ข้อมูลอยู่ในไฟล์ในเครื่องเท่านั้น (หายเมื่อ Render restart)');
+  const api = makeApi({ db, verify, B, origin: process.env.ALLOWED_ORIGIN ?? '*' });
   makeServer(api, { verify, B }).listen(port, '0.0.0.0', () => console.log(`http://localhost:${port}`));
 }

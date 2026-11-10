@@ -2,33 +2,101 @@
 <html lang="th">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#0b0d14">
 <title>Thailand Leveling</title>
 <link rel="icon" href="data:,">
 <style>
-  html,body{margin:0;height:100%;background:#0b0d12;overflow:hidden;touch-action:none;user-select:none;font-family:system-ui,sans-serif}
+  /* ---------- design tokens: ดำอมน้ำเงิน + ทองไทย + กระจกฝ้า ---------- */
+  :root{--bg:#0b0d14;--glass:rgba(16,19,32,.78);--glass2:rgba(28,33,52,.72);--line:rgba(255,255,255,.1);--gold:#e8c25a;--gold2:#b8862b;--txt:#eef0f6;--dim:#9aa3b8;
+    --hp:linear-gradient(#ff7a6b,#d2322d);--mp:linear-gradient(#6fb4ff,#2b66d6);--xp:linear-gradient(#ffe38a,#d8a22a);--ft:linear-gradient(#9fe7c0,#3fae7c);
+    --font:'Noto Sans Thai','Sarabun','Segoe UI',system-ui,sans-serif;--safe-t:env(safe-area-inset-top,0px);--safe-l:env(safe-area-inset-left,0px)}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);overflow:hidden;touch-action:none;user-select:none;-webkit-user-select:none;font-family:var(--font);color:var(--txt)}
   canvas{display:block;position:fixed;inset:0;width:100vw;height:100vh}
-  #gl{z-index:0}#c{z-index:1}#hud{z-index:2}#ui{z-index:10}#giveup{z-index:5}#rotate{z-index:20}
-  #hud{position:fixed;top:8px;left:10px;color:#e8e8e8;font-size:13px;text-shadow:0 1px 2px #000;pointer-events:none}
-  #ui{display:none;position:fixed;inset:0;background:#0b0d12e6;align-items:center;justify-content:center;overflow:auto}
-  .card{background:#171a22;color:#eee;padding:18px 22px;border-radius:12px;display:flex;flex-direction:column;gap:8px;min-width:280px;max-width:92vw;max-height:94vh;overflow:auto}
-  .card h2{margin:0 0 4px}.card .info{font-size:13px;color:#bcc}.card .rows{display:flex;flex-direction:column;gap:6px}.card button:disabled{opacity:.4}
-  #chat{display:none;position:fixed;left:10px;bottom:10px;width:min(60vw,420px);z-index:6;padding:8px;border-radius:6px;border:1px solid #555;background:#0b0d12e6;color:#fff;font-size:14px}.card input[type=email],.card input[type=password],.card input#n{padding:8px;border-radius:6px;border:1px solid #444;background:#0b0d12;color:#fff}
-  .card button{padding:9px;border:0;border-radius:6px;background:#3a7bd5;color:#fff;font-size:15px}.card button.alt{background:#444}
-  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}.jobs{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
-  .job{border:1px solid #444;border-radius:6px;padding:6px;display:flex;flex-direction:column;font-size:13px}.job small{color:#9aa;font-size:11px}.err{color:#f66;margin:0;min-height:1em}
-  #rotate{display:none;position:fixed;inset:0;background:#0b0d12;color:#fff;align-items:center;justify-content:center;font-size:20px}
+  #wx{z-index:1;display:none;pointer-events:none;opacity:.9;image-rendering:pixelated}
+  #gl{z-index:0;image-rendering:pixelated;image-rendering:crisp-edges}#c{z-index:1}#hud{z-index:2}#ui{z-index:10}#giveup{z-index:5}#rotate{z-index:20}
+  body::after{content:'';position:fixed;inset:0;z-index:1;pointer-events:none;background:radial-gradient(ellipse at center,transparent 55%,rgba(5,8,20,.38) 100%)} /* vignette */
+
+  /* ---------- HUD (DOM) ---------- */
+  #hud{position:fixed;top:calc(8px + var(--safe-t));left:calc(10px + var(--safe-l));pointer-events:none;display:none;flex-direction:column;gap:6px;text-shadow:0 1px 3px #000}
+  .plate{display:flex;gap:9px;align-items:center;padding:7px 12px 7px 7px;border-radius:16px;background:var(--glass);border:1px solid var(--line);box-shadow:0 6px 22px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,255,255,.07);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+  .avatar{position:relative;width:46px;height:46px;border-radius:50%;display:grid;place-items:center;font-size:24px;background:radial-gradient(circle at 35% 30%,#3b4468,#161a2b);border:2px solid var(--gold);box-shadow:0 0 12px rgba(232,194,90,.35)}
+  .avatar b{position:absolute;right:-5px;bottom:-5px;min-width:22px;height:22px;padding:0 4px;border-radius:11px;display:grid;place-items:center;font-size:12px;color:#2a1c00;background:linear-gradient(#ffe38a,var(--gold2));border:1px solid #fff6;text-shadow:none}
+  .meta{display:flex;flex-direction:column;gap:3px;width:clamp(140px,22vw,190px)}
+  .nm{display:flex;justify-content:space-between;align-items:center;font-size:13px;font-weight:700;letter-spacing:.2px}
+  .rank{padding:0 7px;border-radius:9px;font-size:11px;color:#2a1c00;background:linear-gradient(#ffe38a,var(--gold2));text-shadow:none}
+  .bar{position:relative;height:11px;border-radius:6px;background:rgba(0,0,0,.55);border:1px solid rgba(255,255,255,.12);overflow:hidden}
+  .bar i{position:absolute;inset:0 auto 0 0;width:100%;border-radius:6px;transition:width .18s ease-out}
+  .bar span{position:absolute;inset:0;display:grid;place-items:center;font-size:9px;font-weight:700;color:#fff;text-shadow:0 1px 2px #000}
+  .bar.hp i{background:var(--hp)}.bar.mp i{background:var(--mp)}.bar.xp{height:5px}.bar.xp i{background:var(--xp)}.bar.ft{height:4px}.bar.ft i{background:var(--ft)}.bar.ft.hot i{background:var(--hp)}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;max-width:60vw}
+  .chip{padding:3px 10px;border-radius:12px;font-size:12px;background:var(--glass);border:1px solid var(--line);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+  .chip.gold{color:var(--gold);font-weight:700}.chip.dim{color:var(--dim);font-size:11px}
+
+  /* ---------- หน้าต่าง / การ์ด ---------- */
+  #ui{display:none;position:fixed;inset:0;background:radial-gradient(ellipse at 50% 30%,rgba(34,40,78,.85),rgba(6,8,16,.96));align-items:center;justify-content:center;overflow:auto;animation:fade .25s ease-out}
+  #ui.over{background:rgba(5,7,14,.62);backdrop-filter:blur(3px);-webkit-backdrop-filter:blur(3px)}
+  @keyframes fade{from{opacity:0}to{opacity:1}}@keyframes pop{from{opacity:0;transform:translateY(10px) scale(.97)}to{opacity:1;transform:none}}
+  .card{position:relative;background:linear-gradient(180deg,rgba(30,35,58,.96),rgba(14,17,30,.97));color:var(--txt);padding:20px 22px;border-radius:20px;display:flex;flex-direction:column;gap:10px;width:min(440px,92vw);max-height:94vh;overflow:auto;
+    border:1px solid rgba(232,194,90,.35);box-shadow:0 20px 60px rgba(0,0,0,.6),0 0 0 1px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.08);animation:pop .22s ease-out;-webkit-overflow-scrolling:touch;touch-action:pan-y}
+  .card h2{margin:0;font-size:20px;letter-spacing:.3px;display:flex;align-items:center;gap:8px}
+  .card h2::before{content:'';width:4px;height:20px;border-radius:2px;background:linear-gradient(var(--gold),var(--gold2))}
+  .x{position:absolute;top:12px;right:12px;width:32px;height:32px;padding:0!important;border-radius:50%!important;background:rgba(255,255,255,.08)!important;font-size:16px!important;line-height:1}
+  .card .info{font-size:13px;color:var(--dim);line-height:1.5;padding:8px 12px;border-radius:12px;background:rgba(0,0,0,.28);border:1px solid var(--line)}
+  .card .rows{display:flex;flex-direction:column;gap:7px}
+  .card button{font-family:inherit;padding:11px 14px;border:1px solid rgba(255,255,255,.12);border-radius:12px;color:#fff;font-size:14px;text-align:left;cursor:pointer;
+    background:linear-gradient(180deg,#4a7be0,#2f56b8);box-shadow:0 3px 0 #1c3a85,0 6px 14px rgba(0,0,0,.35);transition:transform .08s,filter .15s}
+  .card button:hover{filter:brightness(1.12)}.card button:active{transform:translateY(2px);box-shadow:0 1px 0 #1c3a85}
+  .card button.alt{background:linear-gradient(180deg,#4a5066,#31364a);box-shadow:0 3px 0 #1d2132,0 6px 14px rgba(0,0,0,.3);text-align:center}
+  .card button.cta{background:linear-gradient(180deg,#ffd76a,#d79a1f);color:#3a2600;font-weight:800;font-size:16px;text-align:center;box-shadow:0 3px 0 #8d6212,0 8px 22px rgba(232,194,90,.35);text-shadow:0 1px 0 #fff6}
+  .card button:disabled{opacity:.4;filter:grayscale(.5);cursor:default;transform:none}
+  .card input[type=email],.card input[type=password],.card input#n{font-family:inherit;padding:12px 14px;border-radius:12px;border:1px solid rgba(255,255,255,.16);background:rgba(0,0,0,.4);color:#fff;font-size:15px;outline:none;transition:border .15s,box-shadow .15s}
+  .card input:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(232,194,90,.2)}
+  .err{color:#ff8a80;margin:0;min-height:1.2em;font-size:13px}
+  .logo{text-align:center;margin:2px 0 6px}.logo b{display:block;font-size:30px;font-weight:900;letter-spacing:1px;background:linear-gradient(#fff2b8,#e8c25a 55%,#b8862b);-webkit-background-clip:text;background-clip:text;color:transparent;filter:drop-shadow(0 2px 0 rgba(0,0,0,.6))}
+  .logo small{color:var(--dim);font-size:12px;letter-spacing:3px;text-transform:uppercase}
+  .row{display:flex;gap:8px}.seg{flex:1;position:relative}.seg input{position:absolute;opacity:0}.seg span{display:block;text-align:center;padding:9px;border-radius:12px;border:1px solid var(--line);background:rgba(0,0,0,.3);font-size:14px;cursor:pointer}
+  .seg input:checked+span{border-color:var(--gold);background:rgba(232,194,90,.16);color:var(--gold);font-weight:700}
+  .jobs{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+  .card:has(.jobs){width:min(640px,94vw)}.card:has(.jobs) .jobs{grid-template-columns:repeat(3,1fr)}
+  .job{position:relative;cursor:pointer}.job input{position:absolute;opacity:0}
+  .job>div{height:100%;display:flex;flex-direction:column;gap:3px;padding:10px;border-radius:14px;border:1px solid var(--line);background:rgba(0,0,0,.28);transition:transform .12s,border .15s,background .15s}
+  .job input:checked+div{border-color:var(--gold);background:linear-gradient(180deg,rgba(232,194,90,.2),rgba(232,194,90,.06));transform:translateY(-1px);box-shadow:0 0 16px rgba(232,194,90,.25)}
+  .job .t{display:flex;align-items:center;gap:7px;font-weight:800;font-size:14px}.job .t em{font-style:normal;font-size:20px}
+  .job p{margin:0;font-size:11px;color:var(--dim);line-height:1.35}.job .st{display:grid;grid-template-columns:auto 1fr;gap:2px 6px;align-items:center;font-size:9px;color:var(--dim);margin-top:3px}
+  .job .st b{display:block;height:4px;border-radius:2px;background:linear-gradient(90deg,var(--gold2),var(--gold))}
+  .tag{font-size:11px;padding:2px 8px;border-radius:9px;background:rgba(255,255,255,.08);color:var(--dim);display:inline-block}
+
+  /* ---------- แชต / ยอมแพ้ / หมุนจอ ---------- */
+  #chat{display:none;position:fixed;left:10px;bottom:calc(10px + env(safe-area-inset-bottom,0px));width:min(60vw,440px);z-index:6;padding:11px 14px;border-radius:14px;border:1px solid var(--gold);background:var(--glass);color:#fff;font:14px var(--font);outline:none;backdrop-filter:blur(8px)}
+  #giveup{display:none;position:fixed;left:50%;top:58%;transform:translateX(-50%);padding:12px 26px;font:700 16px var(--font);border:1px solid #fff3;border-radius:14px;background:linear-gradient(#5b6078,#383c52);color:#fff;box-shadow:0 4px 0 #1d2132,0 10px 26px #0008;cursor:pointer}
+  #rotate{display:none;position:fixed;inset:0;background:var(--bg);color:#fff;align-items:center;justify-content:center;font-size:20px;text-align:center}
   @media (orientation:portrait) and (pointer:coarse){#rotate{display:flex}}
+  @media (max-height:520px){.job .st{display:none}.card{padding:14px 16px}.meta{width:150px}.avatar{width:40px;height:40px;font-size:20px}}
 </style>
 </head>
 <body>
 <canvas id="gl"></canvas>
+<canvas id="wx" width="320" height="180"></canvas>
 <canvas id="c"></canvas>
-<div id="hud"></div>
+<div id="hud">
+  <div class="plate">
+    <div class="avatar"><span id="av">⚔️</span><b id="lv">1</b></div>
+    <div class="meta">
+      <div class="nm"><span id="nm"></span><span class="rank" id="rk">E</span></div>
+      <div class="bar hp"><i id="bhp"></i><span id="thp"></span></div>
+      <div class="bar mp"><i id="bmp"></i><span id="tmp"></span></div>
+      <div class="bar xp"><i id="bxp"></i></div>
+      <div class="bar ft" id="bft"><i id="bfi"></i></div>
+    </div>
+  </div>
+  <div class="chips"><span class="chip gold" id="cb">฿0</span><span class="chip" id="cz"></span><span class="chip dim" id="ci"></span></div>
+</div>
 <div id="ui"></div>
 <input id="chat" maxlength="200" placeholder="พิมพ์แล้วกด Enter · /p ข้อความ = แชตปาร์ตี้" autocomplete="off">
-<button id="giveup" style="display:none;position:fixed;left:50%;top:58%;transform:translateX(-50%);padding:10px 22px;font-size:16px;border:0;border-radius:8px;background:#444;color:#fff">ยอมแพ้ (ไปโรงพยาบาล)</button>
-<div id="rotate">📱 กรุณาหมุนเป็นแนวนอน</div>
+<button id="giveup">ยอมแพ้ (ไปโรงพยาบาล)</button>
+<div id="rotate">📱<br>กรุณาหมุนเป็นแนวนอน</div>
 <script type="importmap">{"imports":{"three":"/vendor/three/build/three.module.js","three/addons/":"/vendor/three/examples/jsm/"}}</script>
 <script type="module" src="game.js"></script>
 </body>

@@ -1,0 +1,9 @@
+name = "th-leveling-db-gateway"
+main = "worker.js"
+compatibility_date = "2025-01-01"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "th-leveling"
+database_id = "80100b45-9f84-415d-b809-feb04526d164" # ไม่ใช่ความลับ
+# ตั้งรหัสผ่านระหว่าง game server ↔ gateway:  npx wrangler secret put GATEWAY_TOKEN
