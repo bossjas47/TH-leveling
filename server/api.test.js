@@ -22,7 +22,7 @@ await new Promise((r) => srv.listen(0, r));
 const url = (p) => `http://localhost:${srv.address().port}${p}`;
 test.after(() => srv.close());
 
-const look = { skin_tone: 2, hair_style: 1, hair_color: '#1a1a1a', outfit: 'street_hoodie' };
+const look = { skin_tone: 2, hair_style: 1, hair_color: '#1a1a1a', outfit: 'coat#1c1f2c|pants#16141b|boots#16141b' };
 const post = (tok, body) => fetch(url('/api/character'), { method: 'POST', headers: { authorization: `Bearer ${tok}` }, body: JSON.stringify(body) });
 const get = (tok) => fetch(url('/api/me'), { headers: { authorization: `Bearer ${tok}` } });
 

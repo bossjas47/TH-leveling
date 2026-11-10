@@ -4,7 +4,8 @@ import { makeGateE } from '/shared/gate.js';
 import { ensureCharacter } from './account.js';
 import { createWorld } from './world3d.js';
 import { API } from './firebase-config.js';
-import { JOB, SKILL_ICON } from './ui.js';
+import { JOB, SKILL_ICON, ic, icImg } from './ui.js';
+import { lookEditor } from './dresser.js';
 
 const B = await (await fetch('/shared/balance.json')).json();
 const me = await ensureCharacter(B);
@@ -34,7 +35,7 @@ function playSkillFx(id) {
 }
 
 // ---------- Network: server ตัดสินตำแหน่งจริง, client ทำนายตัวเอง + แก้เมื่อคลาดเกิน 1 tile ----------
-// shortcut: ไม่ reconnect อัตโนมัติ (ขึ้นข้อความแล้วให้รีเฟรช), ก่อนเปิดจริงเพิ่ม reconnect + input sequence
+// หลุด = ต่อใหม่เอง (รอ 1, 2, 4… สูงสุด 10 วิ) · server ให้เกิดที่เดิมถ้ากลับมาภายใน 60 วิ
 const looks = new Map();  // id → { skin_tone, hair_style, hair_color, outfit }
 const others = new Map(); // id → { x, y, tx, ty, name, job }
 const nodes = new Map();  // id → { x, y, hp, max, flash } จุดแร่ใน Gate
@@ -48,15 +49,20 @@ let party = [];           // [[uid, name], ...] ว่าง = ไม่มี�
 const chatLog = [];       // ข้อความล่าสุด { text, at, p }
 const cds = {};           // skill id → เวลาที่พร้อมใช้ (ms) ให้ UI โชว์ cooldown; server ตัดสินจริง
 let assisting = 0;        // เวลาสิ้นสุดการพยุง (ms) ไว้โชว์แถบ
+let retries = 0;
 let ws = null, status = '', lastSent = [0, 0], lastSentAt = 0, myId = null, downedAt = 0, atkHeld = false, lastAtk = 0;
 function connect() { // เชื่อมต่อหลังโหลดภาพเสร็จเท่านั้น: ข้อความจาก server (เช่น room) ใช้พื้น/ภาพที่ต้องพร้อมก่อน
   if (!me.getToken) return;
   ws = new WebSocket((API || location.origin).replace(/^http/, 'ws') + '/ws');
   ws.onopen = async () => ws.send(JSON.stringify({ t: 'auth', token: await me.getToken() }));
-  ws.onclose = (e) => { status = e.code === 4000 ? 'ล็อกอินจากที่อื่น' : 'ขาดการเชื่อมต่อ — รีเฟรชหน้า'; };
+  ws.onclose = (e) => {
+    if (e.code === 4000 || e.code === 4002) { status = e.code === 4000 ? 'ล็อกอินจากที่อื่น' : 'ยืนยันตัวตนไม่ผ่าน — รีเฟรชหน้า'; return; } // ไม่ต่อใหม่: จะเตะกันไปมา / token เสีย
+    const wait = Math.min(10000, 1000 * 2 ** retries++); status = `ขาดการเชื่อมต่อ — กำลังต่อใหม่ใน ${Math.round(wait / 1000)} วิ`;
+    setTimeout(connect, wait);
+  };
   ws.onmessage = (e) => {
     const m = JSON.parse(e.data);
-    if (m.t === 'me') { Object.assign(stats, { level: m.level, exp: m.exp, next: m.next, mp: m.mp, maxMp: m.maxMp, potions: m.potions, rank: m.rank ?? stats.rank, baht: m.baht, items: m.items, st: m.stats, statPoints: m.statPoints, weapon: m.weapon, enhance: m.enhance }); player.speed = m.speed; renderPanel(); }
+    if (m.t === 'me') { Object.assign(stats, { level: m.level, exp: m.exp, next: m.next, mp: m.mp, maxMp: m.maxMp, potions: m.potions, rank: m.rank ?? stats.rank, baht: m.baht, items: m.items, st: m.stats, statPoints: m.statPoints, weapon: m.weapon, enhance: m.enhance, weapons: m.weapons ?? [] }); player.speed = m.speed; renderPanel(); }
     if (m.t === 'party') { party = m.members; renderPanel(); }
     if (m.t === 'pinvited') panel(() => ({ title: 'คำเชิญปาร์ตี้', info: `${m.name} ชวนเข้าปาร์ตี้`, rows: [{ label: 'เข้าร่วม', fn: () => sendMsg({ t: 'paccept' }), close: true }] }));
     if (m.t === 'chat') { chatLog.push({ text: `${m.ch === 'p' ? '[ปาร์ตี้] ' : ''}${m.name}: ${m.text}`, at: performance.now(), p: m.ch === 'p' }); if (chatLog.length > 6) chatLog.shift(); const o = m.id === myId ? player : others.get(m.id); if (o) { o.say = m.text; o.sayUntil = performance.now() + B.chat.bubble_sec * 1000; } }
@@ -80,12 +86,12 @@ function connect() { // เชื่อมต่อหลังโหลดภ�
     if (m.t === 'gateFailed') toast('Gate หมดเวลา', 3500, true);
     if (m.t === 'rankResult') toast(m.passed ? `สอบผ่าน! แรงค์ ${m.rank}` : `สอบไม่ผ่าน (${m.burst}/${m.need})`, 4500, true);
     if (m.t === 'nodeHit') { const n = nodes.get(m.id); if (n) n.flash = performance.now(); }
-    if (m.t === 'look') looks.set(m.id, m.look);
+    if (m.t === 'look') { looks.set(m.id, m.look); if (m.id === myId) player.look = { ...player.look, ...m.look }; }
     if (m.t === 'skill') { cds[m.skill] = performance.now() + m.cd * 1000; playSkillFx(m.skill); }
     if (m.t === 'assisting') assisting = performance.now() + m.sec * 1000;
     if (m.t === 'assistCancel') assisting = 0;
     if (m.t === 'hit') { const t = mobs.get(m.id); if (t) { t.flash = performance.now(); fxAt(m.crit ? 'crit-hit' : 'hit-spark', t.x, t.y, { h: 0.55, scale: m.crit ? 0.8 : 0.6 }); fx.push({ x: t.x, y: t.y, v: m.v, crit: m.crit, t: performance.now() }); } }
-    if (m.t === 'hello') { myId = m.id; player.x = m.x; player.y = m.y; }
+    if (m.t === 'hello') { myId = m.id; player.x = m.x; player.y = m.y; retries = 0; status = ''; }
     if (m.t !== 's') return;
     const seen = new Set();
     for (const [id, x, y, name, job, , hp, max, down, act, face, fat] of m.p) {
@@ -192,7 +198,7 @@ function renderPanel() {
   if (!panelFn) return;
   const { title, info = '', rows } = panelFn();
   ui.classList.add('over');
-  ui.innerHTML = '<div class="card"><button class="x" aria-label="ปิด">✕</button><h2></h2><div class="info"></div><div class="rows"></div><button class="alt">ปิด (Esc)</button></div>';
+  ui.innerHTML = `<div class="card"><button class="x" aria-label="ปิด">${ic('x')}</button><h2></h2><div class="info"></div><div class="rows"></div><button class="alt">ปิด (Esc)</button></div>`;
   ui.firstChild.onclick = (e) => e.stopPropagation(); ui.onclick = (e) => e.target === ui && closePanel(); // แตะพื้นหลัง = ปิด
   ui.querySelector('h2').textContent = title; ui.querySelector('.info').textContent = info;
   for (const r of rows) { const b = document.createElement('button'); b.textContent = r.label; b.disabled = !!r.off; b.onclick = () => { r.fn(); if (r.close) closePanel(); }; ui.querySelector('.rows').append(b); }
@@ -202,7 +208,7 @@ const baht = (n) => '฿' + Math.round(n).toLocaleString(), have = (id) => stats
 const marketPanel = () => ({ title: 'ตลาด', info: `เงิน ${baht(stats.baht)}`, rows: [
   { label: 'ขายของที่เก็บมาทั้งหมด', fn: () => sendMsg({ t: 'sell' }) },
   ...B.shop.consumables.map((id) => ({ label: `ซื้อ ${B.consumables[id].name} ${baht(B.consumables[id].price)} (มี ${have(id)})`, off: stats.baht < B.consumables[id].price, fn: () => sendMsg({ t: 'buy', item: id }) })),
-  ...B.shop.weapons.map((id) => ({ label: `${stats.weapon === id ? '✔ ' : 'ซื้อ '}${B.weapons[id].name} (${B.weapons[id].rank}) ATK ${B.weapons[id].atk} ${baht(B.weapons[id].price)}`, off: stats.weapon === id || stats.baht < B.weapons[id].price, fn: () => sendMsg({ t: 'buy', item: id }) })),
+  ...B.shop.weapons.map((id) => ({ label: `${stats.weapon === id ? 'สวมอยู่: ' : 'ซื้อ '}${B.weapons[id].name} (${B.weapons[id].rank}) ATK ${B.weapons[id].atk} ${baht(B.weapons[id].price)}`, off: stats.weapon === id || stats.baht < B.weapons[id].price, fn: () => sendMsg({ t: 'buy', item: id }) })),
 ] });
 const assocPanel = () => {
   const w = B.weapons[stats.weapon], stone = w && `mana_stone_${w.rank.toLowerCase()}`, need = B.enhancement.materials[stats.enhance];
@@ -217,8 +223,19 @@ const charPanel = () => ({ title: `${me.username} · ${me.job} Lv.${stats.level}
   rows: [
     ...Object.entries({ str: 'STR พลังโจมตี', agi: 'AGI ความเร็ว', vit: 'VIT เลือด', int: 'INT เวท/MP', per: 'PER คริติคอล' }).map(([k, n]) => ({ label: `+ ${n} (${stats.st[k]})`, off: !stats.statPoints, fn: () => sendMsg({ t: 'stat', k }) })),
     ...['water', 'energy_drink'].map((id) => ({ label: `ใช้${B.consumables[id].name} −${B.consumables[id].fatigue}% เหนื่อย (มี ${have(id)})`, off: !have(id), fn: () => sendMsg({ t: 'use', item: id }) })),
+    ...(stats.weapons ?? []).filter(([id]) => B.weapons[id]).map(([id, e]) => ({ label: `${id === stats.weapon ? 'สวมอยู่: ' : 'สวม '}${B.weapons[id].name} +${e} ATK ${B.weapons[id].atk}`, off: id === stats.weapon || room.kind !== 'lobby', fn: () => sendMsg({ t: 'equip', item: id }) })),
+    ...(room.kind === 'lobby' ? [{ label: 'ตู้เสื้อผ้า (เปลี่ยนชุด/ทรงผม ฟรีในเมือง)', fn: openWardrobe }] : []),
     ...(party.length ? [{ label: 'ออกจากปาร์ตี้', fn: () => sendMsg({ t: 'pleave' }) }] : []),
   ] });
+function openWardrobe() { // ตู้เสื้อผ้า: ใช้ตัวแต่งตัวเดียวกับหน้าสร้างตัวละคร
+  panelFn = null; ui.classList.add('over');
+  ui.innerHTML = `<div class="card"><button class="x" aria-label="ปิด">${ic('x')}</button><h2>ตู้เสื้อผ้า</h2><div class=slot></div><button class="cta">${ic('shirt')} บันทึกชุด</button></div>`;
+  const ed = lookEditor(B.appearance, player.look, () => me.job); ui.querySelector('.slot').append(ed.el);
+  ui.firstChild.onclick = (e) => e.stopPropagation(); ui.onclick = (e) => e.target === ui && closePanel();
+  ui.querySelector('.x').onclick = closePanel;
+  ui.querySelector('.cta').onclick = () => { sendMsg({ t: 'look', look: ed.look() }); closePanel(); };
+  ui.style.display = 'flex';
+}
 const inviteTarget = () => room.kind === 'lobby' && party.length < B.party.max && [...others].find(([id, o]) => !party.some((m) => m[0] === id) && Math.hypot(o.x - player.x, o.y - player.y) <= 3);
 function openChat() { chatBox.style.display = 'block'; chatBox.focus(); }
 chatBox.addEventListener('keydown', (e) => {
@@ -260,7 +277,7 @@ canvas.addEventListener('pointerdown', (e) => {
   canvas.setPointerCapture(e.pointerId);
 });
 canvas.addEventListener('pointermove', (e) => {
-  if (camDrag && e.pointerId === camDrag.id) { world.cam.yaw -= (e.clientX - camDrag.x) * 0.0065; world.cam.pitch += (e.clientY - camDrag.y) * 0.0045; camDrag.x = e.clientX; camDrag.y = e.clientY; return; }
+  if (camDrag && e.pointerId === camDrag.id) { world.cam.dist += (e.clientY - camDrag.y) * 0.03; camDrag.y = e.clientY; return; } // isometric: ลากขวาจอขึ้น/ลง = ซูมเข้า/ออก (หมุนล็อก)
   if (e.pointerId !== stick.id) return;
   const dx = e.clientX - stick.ox, dy = e.clientY - stick.oy, d = Math.hypot(dx, dy) || 1;
   const k = Math.min(d, JR) / d;
@@ -332,8 +349,8 @@ function draw(dt, T) {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, innerWidth, innerHeight);
   for (const l of world.labels()) if (view === 'lobby') label(l.text, world.project(l.x, l.y, l.h), { size: 13, color: '#ffe9a8' });
   if (view === 'lobby') for (const [gx, gy] of B.places.gates) label('Gate E', world.project(gx, gy, 1.55), { color: '#9dffb8' });
-  for (const o of others.values()) label(o.name, world.project(o.x, o.y, 1.85), party.some((m) => m[0] === o.id) ? { color: '#9fd0ff' } : {});
-  for (const o of [player, ...others.values()]) if (o.sayUntil > T) label(o.say.slice(0, 40), world.project(o.x, o.y, 2.1), { color: '#ffe9a8' }); // ฟองคำพูด 5 วิ
+  for (const o of others.values()) label(o.name, world.project(o.x, o.y, 1.3), party.some((m) => m[0] === o.id) ? { color: '#9fd0ff' } : {});
+  for (const o of [player, ...others.values()]) if (o.sayUntil > T) label(o.say.slice(0, 40), world.project(o.x, o.y, 1.55), { color: '#ffe9a8' }); // ฟองคำพูด 5 วิ
   for (const m of mobs.values()) { // แถบเลือดมอนธรรมดา (บอสมีแถบใหญ่ด้านบน)
     if (m.kind) continue; const p = world.project(m.x, m.y, 0.88); if (!p) continue;
     pill(p[0] - 15, p[1], 30, 5, m.hp / m.max, ['#ff8a6b', '#d33']);
@@ -342,7 +359,7 @@ function draw(dt, T) {
     const f = fx[i], a = (nowT - f.t) / 800;
     if (a >= 1) { fx.splice(i, 1); continue; }
     const pop = 1 + Math.max(0, 1 - a * 7) * 0.7; // เด้งใหญ่ตอนโดนแล้วหดลง
-    ctx.globalAlpha = Math.min(1, 2.2 - a * 2.2); label(f.crit ? `✦ ${f.v} ✦` : String(f.v), world.project(f.x, f.y, 0.7 + a * 0.5), { size: (f.crit ? 20 : 14) * pop, color: f.crit ? '#ffd23f' : '#fff' }); ctx.globalAlpha = 1;
+    ctx.globalAlpha = Math.min(1, 2.2 - a * 2.2); label(String(f.v), world.project(f.x, f.y, 0.7 + a * 0.5), { size: (f.crit ? 20 : 14) * pop, color: f.crit ? '#ffd23f' : '#fff' }); ctx.globalAlpha = 1;
   }
   // joystick
   ctx.setTransform(devicePixelRatio || 1, 0, 0, devicePixelRatio || 1, 0, 0);
@@ -363,7 +380,7 @@ function draw(dt, T) {
   if (boss) {
     const w = Math.min(380, innerWidth * 0.46), x0 = (innerWidth - w) / 2, y0 = 22 + 0;
     plate(x0 - 12, y0 - 18, w + 24, 40, 14, 'rgba(14,16,28,.82)', 'rgba(232,194,90,.55)');
-    ctx.textAlign = 'center'; ctx.font = 'bold 13px system-ui'; ctx.fillStyle = '#ffe08a'; ctx.fillText('👑 Goblin Chief', innerWidth / 2, y0 - 3);
+    ctx.textAlign = 'center'; ctx.font = 'bold 13px system-ui'; ctx.fillStyle = '#ffe08a'; ctx.fillText('Goblin Chief', innerWidth / 2 + 9, y0 - 3); ctx.drawImage(icImg('crown'), innerWidth / 2 - ctx.measureText('Goblin Chief').width / 2 - 9, y0 - 15, 14, 14);
     pill(x0, y0 + 2, w, 10, boss.hp / boss.max, ['#ff8a6b', '#c42a2a']);
   }
   for (let i = toasts.length - 1; i >= 0; i--) if (toasts[i].until < nowT) toasts.splice(i, 1);
@@ -384,7 +401,7 @@ function draw(dt, T) {
 const hud = document.getElementById('hud'), $ = (id) => document.getElementById(id);
 const hudSet = (el, k, v) => { if (el._k !== v) { el._k = v; el[k] = v; } };
 function updateHud() { // HUD แบบ DOM: อัปเดตเฉพาะค่าที่เปลี่ยน
-  hudSet($('nm'), 'textContent', me.username); hudSet($('av'), 'textContent', JOB[me.job]?.icon ?? '⭐'); hudSet($('lv'), 'textContent', stats.level); hudSet($('rk'), 'textContent', stats.rank);
+  hudSet($('nm'), 'textContent', me.username); hudSet($('av'), 'innerHTML', ic(JOB[me.job]?.icon ?? 'star')); hudSet($('lv'), 'textContent', stats.level); hudSet($('rk'), 'textContent', stats.rank);
   const f = (v, m) => Math.max(0, Math.min(100, (v / (m || 1)) * 100)).toFixed(1) + '%';
   hudSet($('bhp').style, 'width', f(stats.hp, stats.max)); hudSet($('thp'), 'textContent', `${Math.max(0, Math.round(stats.hp))} / ${stats.max}`);
   hudSet($('bmp').style, 'width', f(stats.mp, stats.maxMp)); hudSet($('tmp'), 'textContent', `${Math.round(stats.mp)} / ${stats.maxMp}`);
@@ -393,7 +410,7 @@ function updateHud() { // HUD แบบ DOM: อัปเดตเฉพาะ�
 }
 function updateInfo(fps) { // ข้อความรอง: ห้อง/ตัวจับเวลา Gate/จำนวนคน/สถานะ/fps (อัปเดต 2 ครั้ง/วิ)
   const left = room.expiresAt && room.kind === 'gate_e' ? ' ⏳ ' + new Date(Math.max(0, room.expiresAt - Date.now())).toISOString().slice(11, 19) : '';
-  hudSet($('cz'), 'textContent', `📍 ${room.name || 'bkk_lobby'}${left}`);
+  hudSet($('cz'), 'innerHTML', `${ic('map-pin')} ${room.name || 'bkk_lobby'}${left}`);
   hudSet($('ci'), 'textContent', `${fps} fps${ws ? ` · ออนไลน์ ${others.size + 1}` : ''}${status ? ' · ' + status : ''}`);
 }
 function plate(x, y, w, h, r, fill, stroke, glow) { // แผ่นโค้งมนพื้นกระจก
@@ -413,8 +430,8 @@ function drawButton(b, T) { // ปุ่มบนจอ: แผ่นกลม�
   const g = ctx.createRadialGradient(b.x - r * 0.3, b.y - r * 0.4, r * 0.1, b.x, b.y, r); g.addColorStop(0, c1 + (active ? 'ff' : 'cc')); g.addColorStop(1, c2 + 'ee');
   ctx.fillStyle = g; ctx.beginPath(); ctx.arc(b.x, b.y, r, 0, 7); ctx.fill(); ctx.restore();
   ctx.lineWidth = 2.5; ctx.strokeStyle = active ? '#fff' : 'rgba(255,255,255,.55)'; ctx.beginPath(); ctx.arc(b.x, b.y, r - 1, 0, 7); ctx.stroke();
-  ctx.textAlign = 'center'; ctx.font = `${Math.round(r * 0.95)}px system-ui, "Apple Color Emoji", "Noto Color Emoji", sans-serif`; ctx.fillStyle = '#fff';
-  ctx.globalAlpha = cd > 0 ? 0.45 : 1; ctx.fillText(SKILL_ICON[b.id] ?? '✨', b.x, b.y + r * 0.33); ctx.globalAlpha = 1;
+  ctx.textAlign = 'center'; const im = icImg(SKILL_ICON[b.id] ?? 'sparkles'), is = r * 1.05;
+  ctx.globalAlpha = cd > 0 ? 0.45 : 1; if (im.complete) ctx.drawImage(im, b.x - is / 2, b.y - is / 2, is, is); ctx.globalAlpha = 1;
   if (cd > 0) { // วงคูลดาวน์หมุนตามเข็ม + ตัวเลขวินาที
     const frac = Math.min(1, cd / (b.skill.cd || cd));
     ctx.fillStyle = 'rgba(5,8,18,.62)'; ctx.beginPath(); ctx.moveTo(b.x, b.y); ctx.arc(b.x, b.y, r - 1, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * frac); ctx.closePath(); ctx.fill();

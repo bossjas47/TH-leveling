@@ -14,12 +14,12 @@ B.network.action_distance_tiles = 100; B.gate_e.mining.range_tiles = 100; B.gate
 B.gate_e.clear_linger_sec = 0.6;
 const verify = async (t) => { if (!t.startsWith('u-')) throw new Error('bad'); return t; };
 const db = openDb(':memory:');
-const srv = makeServer(makeApi({ db, verify, B }), { verify, B, worldOpts: { goblins: [] } });
+const srv = makeServer(makeApi({ db, verify, B }), { verify, B, worldOpts: { goblins: [], resumeMs: 0 } });
 await new Promise((r) => srv.listen(0, r));
 const port = srv.address().port;
 test.after(() => { srv.close(); srv.closeAllConnections?.(); });
 
-const look = { skin_tone: 1, hair_style: 1, hair_color: '#1a1a1a', outfit: 'street_hoodie' };
+const look = { skin_tone: 1, hair_style: 1, hair_color: '#1a1a1a', outfit: 'coat#1c1f2c|pants#16141b|boots#16141b' };
 const mk = (uid, username, job = 'Fighter') => fetch(`http://localhost:${port}/api/character`, { method: 'POST', headers: { authorization: `Bearer ${uid}` }, body: JSON.stringify({ username, gender: 'male', job, look }) });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function connect(token) {
@@ -62,7 +62,7 @@ test('ต้องยืนใกล้ประตูก่อนเข้า G
   await mk('u-g', 'Gater1');
   const c = await connect('u-g');
   c.send({ t: 'enter', gate: 0 }); await sleep(150); assert.deepEqual(c.rooms, ['lobby']); assert.match(c.notices.at(-1), /ใกล้ประตู/);
-  await walkTo(c, 9.5, 9.5);
+  await walkTo(c, 21.5, 28.5);
   c.send({ t: 'enter', gate: 0 }); await sleep(300);
   assert.equal(c.room.kind, 'gate_e'); assert.deepEqual([c.room.x, c.room.y], [21.5, 38.5]);
   assert.equal(c.mobs.length, 23, '22 มอน + บอส'); assert.equal(c.mobs.filter((m) => m[5] === 1).length, 1); assert.equal(c.nodes.length, 10);
@@ -73,7 +73,7 @@ test('ต้องยืนใกล้ประตูก่อนเข้า G
 
 test('ขุดแร่ครบ → ฆ่าบอส → clear (EXP + หูบอส) → ถูกวาร์ปออก → ขายของได้เงิน', async () => {
   await mk('u-m', 'Miner01', 'Miner');
-  const c = await connect('u-m'); await walkTo(c, 9.5, 9.5);
+  const c = await connect('u-m'); await walkTo(c, 21.5, 28.5);
   c.send({ t: 'enter', gate: 0 }); await sleep(300);
   for (const n of c.nodes) for (let i = 0; i < 3; i++) { c.send({ t: 'mine', id: n[0] }); await sleep(60); } // Miner ขุด 40/ครั้ง → 3 ครั้งแตก
   await sleep(200);
@@ -84,7 +84,7 @@ test('ขุดแร่ครบ → ฆ่าบอส → clear (EXP + หู
   await sleep(900); assert.equal(c.room.kind, 'lobby', 'หลัง linger ถูกวาร์ปออก');
   // ขาย: ต้องเดินไปที่ตลาด
   c.send({ t: 'sell' }); await sleep(100); assert.match(c.notices.at(-1), /ตลาด/);
-  await walkTo(c, 17, 7.5);
+  await walkTo(c, 28, 23.5);
   const before = row('u-m').baht;
   c.send({ t: 'sell' }); await sleep(200);
   const expected = 10 * B.items.mana_stone_e.price + B.items.goblin_ear_boss.price;
@@ -96,10 +96,11 @@ test('ขุดแร่ครบ → ฆ่าบอส → clear (EXP + หู
 
 test('Gate หมดเวลา → ถูกวาร์ปออก + gateFailed', async () => {
   const old = B.gates.table.E.timer_h; B.gates.table.E.timer_h = 1 / 3600; // 1 วินาที
+  B.gates.low_pool.dungeon_break_if_no_clear = false; // Dungeon Break ทดสอบแยกด้านล่าง (มอนในเมืองจะรบกวนเทสต์ถัดไป)
   await mk('u-t', 'Timer01');
-  const c = await connect('u-t'); await walkTo(c, 9.5, 9.5);
+  const c = await connect('u-t'); await walkTo(c, 21.5, 28.5);
   c.send({ t: 'enter', gate: 0 }); await sleep(300); assert.equal(c.room.kind, 'gate_e');
-  await sleep(1300); B.gates.table.E.timer_h = old;
+  await sleep(1300); B.gates.table.E.timer_h = old; B.gates.low_pool.dungeon_break_if_no_clear = true;
   assert.equal(c.failed, true); assert.equal(c.room.kind, 'lobby');
   await bye(c);
 });
@@ -110,20 +111,32 @@ test('สอบแรงค์ D: ต้องเลเวลถึง + อย�
   await mk('u-r', 'Ranker01');
   const c = await connect('u-r');
   c.send({ t: 'ranktest' }); await sleep(100); assert.match(c.notices.at(-1), /สมาคม/);
-  await walkTo(c, 6, 7.5);
+  await walkTo(c, 18, 19.5);
   c.send({ t: 'ranktest' }); await sleep(100); assert.match(c.notices.at(-1), new RegExp(`เลเวล ${req.level}`));
   await bye(c);
   db.prepare("UPDATE users SET level = 10 WHERE id = 'u-r'").run();
-  const d = await connect('u-r'); await walkTo(d, 6, 7.5);
+  const d = await connect('u-r'); await walkTo(d, 18, 19.5);
   const burst = req.burst; req.burst = 100000; // ตก
   d.send({ t: 'ranktest' }); await sleep(250); assert.equal(d.room.kind, 'test');
   d.send({ t: 'atk', id: 'dummy' }); await sleep(1700);
   assert.equal(d.rank.passed, false); assert.equal(row('u-r').hunter_rank, 'E'); assert.equal(d.room.kind, 'lobby');
   req.burst = 20; // ผ่าน
-  await walkTo(d, 6, 7.5);
+  await walkTo(d, 18, 19.5);
   d.send({ t: 'ranktest' }); await sleep(250);
   d.send({ t: 'atk', id: 'dummy' }); await sleep(900); d.send({ t: 'cast', skill: 'slash', id: 'dummy' }); await sleep(900);
   assert.equal(d.rank.passed, true, JSON.stringify(d.rank)); assert.equal(d.rank.rank, 'D'); assert.equal(row('u-r').hunter_rank, 'D');
   req.burst = burst; B.hunter_ranks.assessment.duration_sec = dur;
   await bye(d);
+});
+
+test('Dungeon Break: Gate หมดเวลาไม่มีใคร clear → มอนบุกเมืองรอบประตูตามจำนวนใน balance + แจ้งทุกคน', async () => {
+  const old = B.gates.table.E.timer_h; B.gates.table.E.timer_h = 1 / 3600;
+  await mk('u-db', 'Breaker1');
+  const c = await connect('u-db'); await walkTo(c, 21.5, 28.5);
+  c.send({ t: 'enter', gate: 0 }); await sleep(300); assert.equal(c.room.kind, 'gate_e');
+  await sleep(1300); B.gates.table.E.timer_h = old;
+  assert.equal(c.room.kind, 'lobby'); await sleep(200);
+  assert.equal(c.mobs.length, B.dungeon_break.mobs.E.count); assert.ok(c.notices.some((t) => /Dungeon Break/.test(t)));
+  for (const [x, y] of c.mobs.map((m) => [m[1], m[2]])) assert.ok(Math.hypot(x - 21.5, y - 28.5) <= 5, `เกิดใกล้ประตู (เดินมาได้นิดหน่อย) ${x},${y}`);
+  await bye(c);
 });

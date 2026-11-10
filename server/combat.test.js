@@ -12,12 +12,12 @@ B.monsters.E.normal.hp = 20; B.monsters.E.normal.exp = 100; B.combat.mob.respawn
 const setMobAtk = (v) => { B.monsters.E.normal.atk = v; }; // server อ่านค่าสดทุกครั้ง
 const verify = async (t) => { if (!t.startsWith('u-')) throw new Error('bad'); return t; };
 const db = openDb(':memory:');
-const srv = makeServer(makeApi({ db, verify, B }), { verify, B, worldOpts: { goblins: [[12.8, 12], [12, 20]] } }); // m0 ชิดจุดเกิด, m1 ไกล
+const srv = makeServer(makeApi({ db, verify, B }), { verify, B, worldOpts: { goblins: [[24.8, 24], [24, 32]], resumeMs: 0 } }); // m0 ชิดจุดเกิด, m1 ไกล
 await new Promise((r) => srv.listen(0, r));
 const port = srv.address().port;
 test.after(() => { srv.close(); srv.closeAllConnections?.(); });
 
-const look = { skin_tone: 1, hair_style: 1, hair_color: '#1a1a1a', outfit: 'street_hoodie' };
+const look = { skin_tone: 1, hair_style: 1, hair_color: '#1a1a1a', outfit: 'coat#1c1f2c|pants#16141b|boots#16141b' };
 const mk = (uid, username, job = 'Fighter') => fetch(`http://localhost:${port}/api/character`, { method: 'POST', headers: { authorization: `Bearer ${uid}` }, body: JSON.stringify({ username, gender: 'male', job, look }) });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function connect(token) {

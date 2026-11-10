@@ -1,5 +1,6 @@
 import { maxHp, maxMp } from '/shared/formulas.js';
-import { JOB } from './ui.js';
+import { JOB, ic } from './ui.js';
+import { lookEditor } from './dresser.js';
 
 // login (Firebase Auth) → โหลด/สร้างตัวละคร (GDD §3). ?dev=Fighter ข้ามทั้งหมดเพื่อทดสอบ client อย่างเดียว
 const ui = document.getElementById('ui');
@@ -38,21 +39,18 @@ export async function ensureCharacter(B) {
   let [status, me] = await call('/api/me');
   if (status === 200) return withToken(me);
 
-  const a = B.appearance;
   const jobs = Object.entries(B.classes).map(([j, c]) =>
-    `<label class=job><input type=radio name=job value=${j} ${j === 'Fighter' ? 'checked' : ''}><div><span class=t><em>${JOB[j]?.icon ?? '⭐'}</em>${j}</span><p>${JOB[j]?.desc ?? ''}</p>
+    `<label class=job><input type=radio name=job value=${j} ${j === 'Fighter' ? 'checked' : ''}><div><span class=t><em>${ic(JOB[j]?.icon ?? 'star')}</em>${j}</span><p>${JOB[j]?.desc ?? ''}</p>
       <span class=st>${['str', 'agi', 'vit', 'int', 'per'].map((k) => `<span>${k.toUpperCase()}</span><b style="width:${Math.min(100, c[k] * 5)}%"></b>`).join('')}</span></div></label>`).join('');
-  const f = h(`<h2>สร้างตัวละคร</h2><input id=n maxlength=24 placeholder="ชื่อ (3–12 ตัวอักษร)">
-    <div class=row><label class=seg><input type=radio name=g value=male checked><span>👨 ชาย</span></label><label class=seg><input type=radio name=g value=female><span>👩 หญิง</span></label></div>
-    <div class=jobs>${jobs}</div>
-    <p id=m class=err></p><button id=ok class=cta>⚡ ปลุกพลัง</button>`);
-  const q = (s) => f.querySelector(s);
+  const f = h(`<h2>สร้างตัวละคร</h2><div class=create><div class=dslot></div><div class=side><input id=n maxlength=24 placeholder="ชื่อ (3–12 ตัวอักษร)">
+    <div class=row><label class=seg><input type=radio name=g value=male checked><span>${ic('mars')} ชาย</span></label><label class=seg><input type=radio name=g value=female><span>${ic('venus')} หญิง</span></label></div>
+    <div class=jobs>${jobs}</div></div></div>
+    <p id=m class=err></p><button id=ok class=cta>${ic('zap')} ปลุกพลัง</button>`);
+  const q = (s) => f.querySelector(s), job = () => f.querySelector('[name=job]:checked').value;
+  const ed = lookEditor(B.appearance, {}, job); q('.dslot').append(ed.el);
   return new Promise((done) => {
     q('#ok').onclick = async () => {
-      [status, me] = await call('/api/character', {
-        username: q('#n').value.trim(), gender: f.querySelector('[name=g]:checked').value, job: f.querySelector('[name=job]:checked').value,
-        look: { skin_tone: 1, hair_style: 1, hair_color: a.hair_colors[0], outfit: a.outfits[0] }, // หน้าตาใช้โมเดลตามอาชีพ (KayKit) ค่านี้เก็บไว้เพื่อ schema
-      });
+      [status, me] = await call('/api/character', { username: q('#n').value.trim(), gender: f.querySelector('[name=g]:checked').value, job: job(), look: ed.look() });
       if (status === 201) done(withToken(me)); else q('#m').textContent = me.error;
     };
   });

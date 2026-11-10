@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { maxHp, maxMp } from '../shared/formulas.js';
+import { validLook } from '../shared/look.js';
 
 const json = (res, code, body) =>
   res.writeHead(code, { 'content-type': 'application/json' }).end(JSON.stringify(body));
@@ -15,15 +16,11 @@ const nameLen = (s) => [...new Intl.Segmenter().segment(s)].length; // นับ
 const validName = (s) => typeof s === 'string' && s.length <= 48 && NAME.test(s) && /\p{L}/u.test(s) && nameLen(s) >= 3 && nameLen(s) <= 12;
 
 export function validateCharacter(b, B) {
-  const a = B.appearance, look = b.look ?? {};
+  const a = B.appearance;
   if (!validName(b.username)) return 'ชื่อต้องยาว 3–12 ตัวอักษร (ตัวอักษร/ตัวเลข/_)';
   if (!['male', 'female'].includes(b.gender)) return 'เพศไม่ถูกต้อง';
   if (!Object.hasOwn(B.classes, b.job)) return 'อาชีพไม่ถูกต้อง';
-  if (!Number.isInteger(look.skin_tone) || look.skin_tone < 1 || look.skin_tone > a.skin_tones) return 'โทนผิวไม่ถูกต้อง';
-  if (!Number.isInteger(look.hair_style) || look.hair_style < 1 || look.hair_style > a.hair_styles) return 'ทรงผมไม่ถูกต้อง';
-  if (!a.hair_colors.includes(look.hair_color)) return 'สีผมไม่ถูกต้อง';
-  if (!a.outfits.includes(look.outfit)) return 'ชุดไม่ถูกต้อง';
-  return null;
+  return validLook(b.look, a);
 }
 
 export function makeApi({ db, verify, B, origin = '*' }) {

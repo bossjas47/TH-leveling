@@ -162,7 +162,9 @@
 ### 3.1 ขั้นตอน
 
 1. **ตั้งชื่อ:** 3–12 ตัวอักษร → INSERT `users` (UNIQUE `username` COLLATE NOCASE = atomic)
-2. **รูปลักษณ์:** เพศ × โทนผิว × ทรงผม (4×5 สี) × ชุด (3 แบบ)
+2. **รูปลักษณ์ (paper-doll วาดด้วยโค้ด):** เพศ × โทนผิว 4 × ทรงผม 4 × สีผม 5 × ชุด 3 ช่อง — เสื้อ (เสื้อยืด/ฮู้ด/แจ็กเก็ต/โค้ทยาว/ชุดสมาคม/สูท) · ท่อนล่าง (กางเกงขายาว/ขาสั้น/กระโปรง) · รองเท้า (ผ้าใบ/บูท) แต่ละช่องเลือกสีได้ 13 สี · มีภาพตัวละครหมุนดูได้ระหว่างแต่ง
+   * เก็บใน `users.outfit` เป็น `"top#สี|bottom#สี|shoes#สี"` (ตรวจด้วย `shared/look.js`, รายการอยู่ใน `balance.json → appearance.clothes`)
+   * **ตู้เสื้อผ้า:** เปลี่ยนผิว/ผม/ชุดได้ฟรีตลอดเวลาในเมือง (หน้าตัวละคร) · อาชีพแยกได้จากสีตาเรืองแสง อาวุธ และโล่ (Tank)
 3. **เลือกอาชีพ (6):** แสดง stat + starter weapon
 4. **Awakening Cutscene:** บัตร Rank E → บันทึก D1 → เข้า bkk_lobby
 
@@ -571,21 +573,19 @@ Gate แบ่งเป็น 2 pool:
 
 | แผนที่ | Tiles |
 | :--- | :-: |
-| bkk_lobby | 24×24 |
+| bkk_lobby | 48×48 (ย่านกลาง 24×24 + บล็อกตึกรอบนอก, `shared/lobby.js`) |
 | Gate E–S | 42×42 → 72×72+ |
 
-### 9.2 กราฟิก 3D กล้องบุคคลที่สาม (เปลี่ยนจาก Isometric 2.5D — v5.1.1)
+### 9.2 กราฟิก: โลก 3D + ศิลปะพิกเซลวาดด้วยโค้ด (อัปเดต 2026-11)
 
-* **Three.js** วาดโลก 3D: พื้น/ถนน/ลานจากภาพ top-down ที่วาดด้วยโค้ด, ตึกจากโมเดล GLB (Kenney City Kit, CC0) แบบ instanced, ต้นสน instanced, แสง Hemisphere + Directional (เงานุ่ม ตามผู้เล่น) + แสงขอบ, หมอก
-* **ผู้เล่น:** โมเดลมีโครงกระดูก KayKit Adventurers (CC0) 1 แบบต่ออาชีพ — Fighter=Barbarian, Tank=Knight, Mage=Mage, Assassin=Rogue_Hooded, Healer=Ranger, Miner=Rogue — ถืออาวุธตามอาชีพ, ท่ายืน/วิ่ง/ล้ม จากชุดท่าของ KayKit, ท่าฟันซ้อนบนกระดูกแขนเอง (ชุดฟรีไม่มีท่าโจมตี) · ตัวเลือกผม/ผิว/ชุดตอนสร้างตัวละครถูกตัด (ไม่มีผลกับโมเดลที่ใช้)
-* **มอน/แร่/ประตู** สร้างจากทรงพื้นฐานของ Three.js (ก๊อปลิน, บอส, คริสตัล, หุ่นสอบ, วงประตู) — ชุด KayKit ไม่มีก๊อปลิน
-* **ธรรมชาติ:** Kenney Nature Kit — ป่าขอบเกาะ/ต้นไม้และหินใน Gate (ช่องทึบ) + ของตกแต่ง (หญ้า ดอกไม้ เห็ด พุ่ม หิน) ไม่มีผลต่อการชน ปิดได้เมื่อเครื่องช้า
-* **กล้องไม่ทะลุตึก/ต้นไม้:** เดินเส้นตรงจากผู้เล่นไปกล้องบนกริดชน ชนช่องทึบแล้วหดเข้า (ต่ำสุด 0.55) แล้วค่อยๆ ถอยกลับ
-* **คุณภาพอัตโนมัติ:** FPS < 26 ต่อเนื่อง 3 วิ → ลดระดับ (เงา+ของตกแต่ง → เงา → พิกเซลเรโชต่ำสุด); บังคับด้วย `?q=2|1|0`
-* **กล้อง:** ตามหลังผู้เล่น (ระยะ 2.4–11, เงย 10°–72°) หมุนด้วยการลากครึ่งขวา/ลูกศร/เมาส์ขวา; joystick เดินตามทิศกล้อง
-* **ตรรกะเกมยังเป็นกริด 2D (x, y)** บน server เหมือนเดิม (ชน/เดิน/ต่อสู้) — 3D เป็นเรื่องการแสดงผลเท่านั้น; server ส่งทิศหันหน้า (`face`) ให้ client หมุนตัว
-* **งบประสิทธิภาพ (วัดจำนวน ยังไม่ได้วัด FPS บนมือถือจริง):** ลาน ≈ 90 draw call / 300K สามเหลี่ยม, Gate ≈ 180–200 draw call / 230–240K สามเหลี่ยม; เงา 1024 px บนจอสัมผัส, pixel ratio ≤ 1.5
-* ตัด: sprite 8 ทิศ, tile 64×32, offscreen canvas pre-render (§10 ข้อ 1–3 ใช้ไม่ได้แล้ว)
+* **Three.js** วาดโลก 3D กล้องบุคคลที่สาม (เดิม) — เรนเดอร์ **ความละเอียดเต็มจอ** + antialias + เงาขอบนุ่ม (`?px=N` = ลุค pixel ความละเอียดต่ำ)
+* **ภาพทั้งหมดวาดด้วยโค้ด** ใน `client/pixel.js` (ไม่มีโมเดล GLB/KayKit แล้ว): พื้น 16 px/ช่อง, ตึก = กล่องผนังพิกเซล instanced, ต้นไม้/หิน/ดอกไม้ = billboard
+* **ตัวละคร:** sprite 24×28 px, 3 มุม (หน้า/หลัง/ข้าง) × 10 เฟรม (ยืน/เดิน/ฟัน/ล้ม) วาดแบบ paper-doll ซ้อนชั้น (§3.1) จึงตรงกันทุกเฟรม · ตาและอาวุธเรืองแสงตามอาชีพ
+* **เมือง:** bkk_lobby 48×48 — ย่านกลาง (§9.1) ล้อมด้วยถนนตาราง + บล็อกอพาร์ตเมนต์ (4.6–6.6) / ออฟฟิศ (7–11.5) / ร้านค้า (2.6–3.6) / สวน; ตึกหลักสูง 3–4.2, หอสมาคม 9.5 (หน่วย = ช่อง, ตัวละครสูง ~1.2)
+* **UI:** ไอคอน Lucide (SVG) ทั้งหมด ไม่ใช้อิโมจิ
+* **คุณภาพอัตโนมัติ:** FPS < 26 ต่อเนื่อง 3 วิ → ลดระดับ (ของตกแต่ง → เงา → pixel ratio); บังคับด้วย `?q=2|1|0`
+* **ตรรกะเกมยังเป็นกริด 2D (x, y)** บน server — 3D เป็นเรื่องการแสดงผลเท่านั้น
+* ทางเลือกในอนาคต: sprite ละเอียดสูงจาก PixelLab (ทดลองแล้วที่ 64 px) — ต้องแลกกับระบบแต่งตัวอิสระ
 
 ### 9.3 HUD (Mobile Landscape)
 
@@ -955,12 +955,13 @@ Realtime ใช้ **WebSocket พื้นฐาน (`ws`) ที่ `/ws`** �
 | Phase | เนื้อหา | Definition of Done |
 | :--- | :--- | :--- |
 | **Phase 0: Setup** 🆕 | Monorepo `client/ server/ shared/ db-gateway/`, CI, `balance.json` + validator, unit test สูตร | CI เขียว, สูตรทุกตัวมี test |
-| **Phase 1: Core Base** | Canvas 2.5D, Dynamic Joystick, Map 24×24, Wall Sliding, Tile Culling | 60 fps บนมือถือกลางๆ |
+| **Phase 1: Core Base** ✅ | โลก 3D (Three.js) + กล้องบุคคลที่สาม, Dynamic Joystick, เมือง 48×48, Wall Sliding | 60 fps บนมือถือกลางๆ (⏳ ยังไม่ได้วัดบนเครื่องจริง) |
 | **Phase 2: Character & Auth** | Firebase Auth, SQLite (dev) → D1 + Worker Gateway, Character Creation, HP/MP/Fatigue | สมัคร→สร้างตัว→เข้า lobby→ออก→กลับมาข้อมูลอยู่ครบ |
 | **Phase 2.5: Multiplayer** ✅ | Rooms, 20 Hz tick, 10 Hz broadcast + Lerp, Speed check, Rate limit | 2 เครื่องเห็นกันเดินลื่น |
-| **Phase 3: Combat & Death (PvE)** (🔶 ทำแล้ว: ตีมอน/EXP/เลเวลอัป/Downed/โรงพยาบาล · เหลือ: สกิล, Revive/Assist) | Goblin AI, สูตรดาเมจ, สกิล Tier 1 (2 สกิลแรก), Downed / Revive / Assist, Hospital | ตีมอน-ตาย-ฟื้นได้ครบ loop |
+| **Phase 3: Combat & Death (PvE)** ✅ | Goblin AI, สูตรดาเมจ, สกิล Tier 1 (2 สกิลแรก), Downed / Revive / Assist, Hospital | ตีมอน-ตาย-ฟื้นได้ครบ loop |
 | **Phase 3.5: Gate E (MVP Launch)** ✅ | Low Pool instanced, Mining, Boss, Loot, Rank Test D | **ปล่อยให้คนเล่นจริงครั้งแรก** |
-| **Phase 4: Gate & Guild** | Gate D, PvP + Weapon Drop, High Pool C, Auction, Guild, Contract Board, Dungeon Break | |
+| **ขั้น A (Closed Alpha)** 🔶 | D1 + Worker Gateway ✅, ปาร์ตี้ ✅, ร้านค้า ✅, Fatigue ✅, แชต ✅, ลงแต้ม ✅, ตีบวก/วิน ✅, reconnect + เกิดที่เดิม 60 วิ ✅, แต่งตัว paper-doll + ตู้เสื้อผ้า ✅, สลับอาวุธ ✅ · เหลือ: วัด FPS มือถือ, playtest | คนเล่นจริง 10–20 คน |
+| **Phase 4: Gate & Guild** | Gate D, PvP + Weapon Drop, High Pool C, Auction, Guild, Contract Board, Dungeon Break (✅ Gate E แล้ว) | |
 | **Phase 5: Enhancement & GM** | ตีบวก, วิน, ฉายา, Silent GM, Weapon System ครบ, เกราะ | |
 | **Phase 6: Endgame** | Gate B/A/S, World Boss, S+/SS/SSS, Tier 2, PvP ranking | |
 | **Phase 7: Polish** | Cosmetic, Achievement, Guild Wars | |

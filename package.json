@@ -5,7 +5,7 @@
   "scripts": {
     "start": "node server/index.js",
     "dev": "node server/index.js",
-    "test": "node --test --test-force-exit shared/formulas.test.js server/api.test.js server/world.test.js shared/lobby.test.js shared/combat.test.js server/combat.test.js server/skills.test.js server/gate.test.js server/systems.test.js server/d1sync.test.js",
+    "test": "node --test --test-force-exit shared/formulas.test.js server/api.test.js server/world.test.js shared/lobby.test.js shared/combat.test.js server/combat.test.js server/skills.test.js server/gate.test.js server/systems.test.js server/d1sync.test.js shared/look.test.js server/resume.test.js",
     "validate": "python3 tools/validate_balance.py"
   },
   "engines": {

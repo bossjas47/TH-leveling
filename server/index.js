@@ -11,7 +11,7 @@ import { attachWorld } from './world.js';
 
 // dev server เล็กๆ: เสิร์ฟ client/ ที่ / และ shared/ ที่ /shared/ (ตอนขึ้นจริง client อยู่ Vercel)
 const root = join(fileURLToPath(import.meta.url), '..', '..');
-const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json' };
+const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png' };
 
 const B = JSON.parse(readFileSync(join(root, 'shared', 'balance.json'), 'utf8'));
 
@@ -43,7 +43,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     console.log('D1 โหลดข้อมูล:', await db.d1.hydrate());
     const bye = async () => { await db.d1.flush(); process.exit(0); }; // Render ส่ง SIGTERM ก่อนปิด
     process.on('SIGTERM', bye); process.on('SIGINT', bye);
-  } else console.warn('⚠️ ไม่ได้ตั้ง D1_GATEWAY_URL — ข้อมูลอยู่ในไฟล์ในเครื่องเท่านั้น (หายเมื่อ Render restart)');
+  } else console.warn('ไม่ได้ตั้ง D1_GATEWAY_URL — ข้อมูลอยู่ในไฟล์ในเครื่องเท่านั้น (หายเมื่อ Render restart)');
   const api = makeApi({ db, verify, B, origin: process.env.ALLOWED_ORIGIN ?? '*' });
   makeServer(api, { verify, B }).listen(port, '0.0.0.0', () => console.log(`http://localhost:${port}`));
 }

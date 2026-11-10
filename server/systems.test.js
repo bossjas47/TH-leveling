@@ -13,12 +13,12 @@ B.places.interact_tiles = 100; // ไม่ต้องเดินไปหา�
 B.taxi.cooldown_sec = 0.3;
 const verify = async (t) => { if (!t.startsWith('u-')) throw new Error('bad'); return t; };
 const db = openDb(':memory:');
-const srv = makeServer(makeApi({ db, verify, B }), { verify, B, worldOpts: { goblins: [] } });
+const srv = makeServer(makeApi({ db, verify, B }), { verify, B, worldOpts: { goblins: [], resumeMs: 0 } });
 await new Promise((r) => srv.listen(0, r));
 const port = srv.address().port;
 test.after(() => { srv.close(); srv.closeAllConnections?.(); });
 
-const look = { skin_tone: 1, hair_style: 1, hair_color: '#1a1a1a', outfit: 'street_hoodie' };
+const look = { skin_tone: 1, hair_style: 1, hair_color: '#1a1a1a', outfit: 'coat#1c1f2c|pants#16141b|boots#16141b' };
 const mk = (uid, username, job = 'Fighter') => fetch(`http://localhost:${port}/api/character`, { method: 'POST', headers: { authorization: `Bearer ${uid}` }, body: JSON.stringify({ username, gender: 'male', job, look }) });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 async function connect(token) {
@@ -130,8 +130,8 @@ test('วิน: หักค่าโดยสารตามระยะ, ว�
   await mk('u-t', 'Taxi01');
   const c = await connect('u-t');
   c.send({ t: 'taxi', to: 'hospital' }); await sleep(200);
-  const fare = Math.round(50 + Math.hypot(12 - 2.5, 12 - 6.5) * 40); // 489
-  assert.equal(c.me.baht, 10000 - fare); assert.deepEqual([c.room.x, c.room.y], [2.5, 6.5]);
+  const fare = Math.round(50 + Math.hypot(24 - 21.5, 24 - 33.5) * 40);
+  assert.equal(c.me.baht, 10000 - fare); assert.deepEqual([c.room.x, c.room.y], [21.5, 33.5]);
   c.send({ t: 'taxi', to: 'market' }); await sleep(100); assert.match(c.notices.at(-1), /ไม่ว่าง/);
   c.send({ t: 'taxi', to: 'moon' }); await sleep(100);
   c.send({ t: 'enhance' }); await sleep(100); assert.match(c.notices.at(-1), /แรงค์ D/);
@@ -142,4 +142,30 @@ test('วิน: หักค่าโดยสารตามระยะ, ว�
   for (let i = 0; i < 3; i++) { d.send({ t: 'enhance' }); await sleep(80); } // +1 ใช้ 1, +2 ใช้ 2, +3 ต้อง 4 (เหลือ 0)
   assert.equal(d.me.enhance, 2); assert.equal(d.me.items.mana_stone_e, 0); assert.equal(equip('u-t').weapon_enhance, 2); assert.match(d.notices.at(-1), /4 ก้อน/);
   await bye(d);
+});
+
+test('ตู้เสื้อผ้า: เปลี่ยนชุดในเมือง → บันทึก DB + คนในห้องเห็น; ชุดนอกรายการถูกปฏิเสธ', async () => {
+  await mk('u-w', 'Wardrobe1'); await mk('u-w2', 'Watcher1');
+  const a = await connect('u-w'), b = await connect('u-w2'); const looks = [];
+  b.ws.on('message', (d) => { const m = JSON.parse(d); if (m.t === 'look' && m.id === 'u-w') looks.push(m.look); });
+  const look = { skin_tone: 3, hair_style: 2, hair_color: '#c9a227', outfit: 'suit#d8dce6|skirt#8a2030|sneakers#16141b' };
+  a.send({ t: 'look', look }); await sleep(150);
+  const u = row('u-w'); assert.deepEqual([u.skin_tone, u.hair_style, u.hair_color, u.outfit], [3, 2, '#c9a227', look.outfit]);
+  assert.deepEqual(looks.at(-1), look);
+  a.send({ t: 'look', look: { ...look, outfit: 'cape#d8dce6|skirt#8a2030|sneakers#16141b' } }); await sleep(150);
+  assert.equal(row('u-w').outfit, look.outfit); assert.match(a.notices.at(-1), /ชุด/);
+  await bye(a, b);
+});
+
+test('สลับอาวุธ: ค่าตีบวกติดไปกับอาวุธแต่ละชิ้น, สลับไปอาวุธที่ไม่มีไม่ได้', async () => {
+  await mk('u-e', 'Equip01');
+  const start = equip('u-e').weapon_id, other = Object.keys(B.weapons).find((w) => w !== start);
+  db.prepare("INSERT INTO inventory (id,user_id,item_type,item_id,quantity,enhance,slot_index) VALUES ('e1','u-e','weapon',?,1,3,9)").run(other);
+  const c = await connect('u-e');
+  c.send({ t: 'equip', item: 'nope' }); await sleep(80); assert.equal(c.me.weapon, start);
+  c.send({ t: 'equip', item: other }); await sleep(100);
+  assert.deepEqual([c.me.weapon, c.me.enhance], [other, 3]); assert.deepEqual([equip('u-e').weapon_id, equip('u-e').weapon_enhance], [other, 3]);
+  c.send({ t: 'equip', item: start }); await sleep(100);
+  assert.deepEqual([c.me.weapon, c.me.enhance], [start, 0]); assert.deepEqual(c.me.weapons.find(([w]) => w === other), [other, 3]);
+  await bye(c);
 });

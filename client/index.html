@@ -15,7 +15,7 @@
   html,body{margin:0;height:100%;background:var(--bg);overflow:hidden;touch-action:none;user-select:none;-webkit-user-select:none;font-family:var(--font);color:var(--txt)}
   canvas{display:block;position:fixed;inset:0;width:100vw;height:100vh}
   #wx{z-index:1;display:none;pointer-events:none;opacity:.9;image-rendering:pixelated}
-  #gl{z-index:0;image-rendering:pixelated;image-rendering:crisp-edges}#c{z-index:1}#hud{z-index:2}#ui{z-index:10}#giveup{z-index:5}#rotate{z-index:20}
+  #gl{z-index:0}#c{z-index:1}#hud{z-index:2}#ui{z-index:10}#giveup{z-index:5}#rotate{z-index:20}
   body::after{content:'';position:fixed;inset:0;z-index:1;pointer-events:none;background:radial-gradient(ellipse at center,transparent 55%,rgba(5,8,20,.38) 100%)} /* vignette */
 
   /* ---------- HUD (DOM) ---------- */
@@ -63,9 +63,21 @@
   .job{position:relative;cursor:pointer}.job input{position:absolute;opacity:0}
   .job>div{height:100%;display:flex;flex-direction:column;gap:3px;padding:10px;border-radius:14px;border:1px solid var(--line);background:rgba(0,0,0,.28);transition:transform .12s,border .15s,background .15s}
   .job input:checked+div{border-color:var(--gold);background:linear-gradient(180deg,rgba(232,194,90,.2),rgba(232,194,90,.06));transform:translateY(-1px);box-shadow:0 0 16px rgba(232,194,90,.25)}
-  .job .t{display:flex;align-items:center;gap:7px;font-weight:800;font-size:14px}.job .t em{font-style:normal;font-size:20px}
+  .job .t{display:flex;align-items:center;gap:7px;font-weight:800;font-size:14px}.job .t em{font-style:normal;display:flex}
+  .ic{width:1.15em;height:1.15em;vertical-align:-.2em;display:inline-block}.ic.big{width:56px;height:56px}.avatar .ic{width:24px;height:24px}.job .t .ic{width:20px;height:20px}.cta .ic{filter:brightness(0) opacity(.75)}
   .job p{margin:0;font-size:11px;color:var(--dim);line-height:1.35}.job .st{display:grid;grid-template-columns:auto 1fr;gap:2px 6px;align-items:center;font-size:9px;color:var(--dim);margin-top:3px}
   .job .st b{display:block;height:4px;border-radius:2px;background:linear-gradient(90deg,var(--gold2),var(--gold))}
+  .card:has(.dress){width:min(640px,96vw)}.card:has(.create){width:min(940px,97vw)}.create{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:12px;align-items:start}.side{display:flex;flex-direction:column;gap:8px}
+  .card:has(.create) .jobs{grid-template-columns:repeat(2,1fr)}.card:has(.create) .job .st{display:none}
+  .dress{display:grid;grid-template-columns:auto 1fr;gap:10px;align-items:start}
+  .pv{display:flex;flex-direction:column;align-items:center;gap:6px;padding:8px;border-radius:14px;background:radial-gradient(circle at 50% 40%,#2b3252,#0e1120 75%);border:1px solid var(--line)}
+  .pv canvas{position:static;inset:auto;width:144px;height:168px;image-rendering:pixelated;filter:drop-shadow(0 6px 6px rgba(0,0,0,.6))}
+  .rot{display:flex;gap:6px}.rot button,.chip{padding:6px 10px!important;font-size:12px!important;text-align:center!important;background:rgba(255,255,255,.07)!important;box-shadow:none!important;border:1px solid var(--line)!important}
+  .chip.on{border-color:var(--gold)!important;color:var(--gold);background:rgba(232,194,90,.16)!important;font-weight:700}
+  .opts{display:flex;flex-direction:column;gap:5px;max-height:min(52vh,330px);overflow:auto;padding-right:4px}
+  .grp{display:flex;flex-wrap:wrap;align-items:center;gap:5px}.grp>span{width:58px;font-size:11px;color:var(--dim)}.grp.cols{padding-left:63px}
+  .sw{width:22px;height:22px;padding:0!important;border-radius:50%!important;border:2px solid rgba(255,255,255,.18)!important;box-shadow:none!important}.sw.on{border-color:var(--gold)!important;box-shadow:0 0 0 2px rgba(232,194,90,.35)!important}
+  @media (max-width:720px){.create{grid-template-columns:1fr}}
   .tag{font-size:11px;padding:2px 8px;border-radius:9px;background:rgba(255,255,255,.08);color:var(--dim);display:inline-block}
 
   /* ---------- แชต / ยอมแพ้ / หมุนจอ ---------- */
@@ -82,7 +94,7 @@
 <canvas id="c"></canvas>
 <div id="hud">
   <div class="plate">
-    <div class="avatar"><span id="av">⚔️</span><b id="lv">1</b></div>
+    <div class="avatar"><span id="av"></span><b id="lv">1</b></div>
     <div class="meta">
       <div class="nm"><span id="nm"></span><span class="rank" id="rk">E</span></div>
       <div class="bar hp"><i id="bhp"></i><span id="thp"></span></div>
@@ -96,7 +108,7 @@
 <div id="ui"></div>
 <input id="chat" maxlength="200" placeholder="พิมพ์แล้วกด Enter · /p ข้อความ = แชตปาร์ตี้" autocomplete="off">
 <button id="giveup">ยอมแพ้ (ไปโรงพยาบาล)</button>
-<div id="rotate">📱<br>กรุณาหมุนเป็นแนวนอน</div>
+<div id="rotate"><img class="ic big" src="/assets/icons/smartphone.svg" alt=""><br>กรุณาหมุนเป็นแนวนอน</div>
 <script type="importmap">{"imports":{"three":"/vendor/three/build/three.module.js","three/addons/":"/vendor/three/examples/jsm/"}}</script>
 <script type="module" src="game.js"></script>
 </body>

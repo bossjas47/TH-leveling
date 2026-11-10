@@ -1,6 +1,7 @@
 import { WebSocketServer } from 'ws';
 import { randomUUID } from 'node:crypto';
 import { LOBBY, SPAWN, makeMap } from '../shared/lobby.js';
+import { validLook } from '../shared/look.js';
 import { makeGateE } from '../shared/gate.js';
 import { moveSpeed, maxHp, maxMp, expNext } from '../shared/formulas.js';
 import { basicDamage, damageTaken, critRate, attackInterval, expMult } from '../shared/combat.js';
@@ -9,19 +10,23 @@ const TICK = 0.05;          // 20 Hz  (GDD §12.6)
 const BROADCAST_EVERY = 2;  // 10 Hz
 const MAX_MSG_PER_SEC = 20; // GDD §11.7
 const SAVE_EVERY_MS = 5 * 60 * 1000; // GDD §12.5
+const RESUME_MS = 60 * 1000;
 const RANKS = ['E', 'D', 'C', 'B', 'A', 'S'];
 
 // ห้อง = แผนที่ + ผู้เล่น + มอน: lobby (ถาวร), gate_e (instance ต่อการเข้า), test (ห้องสอบแรงค์ส่วนตัว)
-export function attachWorld(server, { db, verify, B, goblins = B.combat.lobby_goblins }) {
+export function attachWorld(server, { db, verify, B, goblins = B.combat.lobby_goblins, resumeMs = RESUME_MS }) {
   const C = B.combat, M = C.mob, R = B.monsters.E, G = R.normal, GE = B.gate_e, P = B.places; // ก๊อปลิน = มอน rank E (level/def อยู่ที่ R)
   const wss = new WebSocketServer({ server, path: '/ws', maxPayload: 1024 });
   const players = new Map();
+  const resume = new Map(); // uid → { room, x, y, at } หลุดแล้วกลับมาภายใน RESUME_MS = เกิดที่เดิม (GDD A3)
   const rooms = new Map();
   const q = {
     user: db.prepare('SELECT * FROM users WHERE id = ?'),
     equip: db.prepare('SELECT weapon_id, weapon_enhance FROM equipment WHERE user_id = ?'),
     items: db.prepare("SELECT item_id, quantity FROM inventory WHERE user_id = ? AND item_type IN ('potion','loot')"),
     setWeapon: db.prepare('UPDATE equipment SET weapon_id = ?, weapon_enhance = ? WHERE user_id = ?'),
+    weapons: db.prepare("SELECT item_id, enhance FROM inventory WHERE user_id = ? AND item_type = 'weapon'"),
+    keepEnh: db.prepare("UPDATE inventory SET enhance = ? WHERE user_id = ? AND item_id = ? AND item_type = 'weapon'"),
     item: db.prepare('SELECT id FROM inventory WHERE user_id = ? AND item_id = ?'),
     addQty: db.prepare('UPDATE inventory SET quantity = quantity + ? WHERE id = ?'),
     slots: db.prepare('SELECT slot_index FROM inventory WHERE user_id = ?'),
@@ -29,6 +34,7 @@ export function attachWorld(server, { db, verify, B, goblins = B.combat.lobby_go
     loot: db.prepare("SELECT item_id, quantity FROM inventory WHERE user_id = ? AND item_type = 'loot'"),
     delLoot: db.prepare("DELETE FROM inventory WHERE user_id = ? AND item_type = 'loot'"),
     rank: db.prepare('UPDATE users SET hunter_rank = ? WHERE id = ?'),
+    setLook: db.prepare('UPDATE users SET skin_tone = ?, hair_style = ?, hair_color = ?, outfit = ? WHERE id = ?'),
     save: db.prepare('UPDATE users SET hp=?, mp=?, exp=?, level=?, stat_points=?, baht=?, debt=?, free_respawn_count=?, str=?, agi=?, vit=?, int_stat=?, per=?, fatigue=?, fatigue_updated_at=unixepoch(), last_login=unixepoch() WHERE id = ?'),
   };
   const save = (p) => q.save.run(Math.max(0, Math.round(p.hp)), p.mp, p.exp, p.level, p.statPoints, p.baht, Math.max(0, -p.baht), p.free, p.str, p.agi, p.vit, p.int_stat, p.per, fatigue(p, Date.now()), p.uid);
@@ -40,7 +46,8 @@ export function attachWorld(server, { db, verify, B, goblins = B.combat.lobby_go
   const fatigue = (p, now) => { const from = Math.max(p.fatAt, p.lastAct + B.fatigue.recover.idle_after_sec * 1000); if (now > from) p.fatigue = Math.max(0, p.fatigue - (now - from) / 3000 * B.fatigue.recover.idle_per_3s); p.fatAt = now; return p.fatigue; };
   const tire = (p, kind, now) => { p.fatigue = Math.min(100, fatigue(p, now) + B.fatigue.gain[kind] * 100 / (100 + p.vit)); p.lastAct = now; };
   const mePayload = (p) => ({ t: 'me', level: p.level, exp: p.exp, next: expNext(p.level), baht: p.baht, free: p.free, statPoints: p.statPoints, mp: Math.round(p.mp), maxMp: p.maxMp, potions: p.items.mp_potion_0 ?? 0, rank: p.rank,
-    items: p.items, stats: { str: p.str, agi: p.agi, vit: p.vit, int: p.int_stat, per: p.per }, speed: p.speed, weapon: p.weapon, enhance: p.enhance });
+    items: p.items, stats: { str: p.str, agi: p.agi, vit: p.vit, int: p.int_stat, per: p.per }, speed: p.speed, weapon: p.weapon, enhance: p.enhance,
+    weapons: q.weapons.all(p.uid).map((w) => [w.item_id, w.item_id === p.weapon ? p.enhance : w.enhance]) }); // อาวุธทุกชิ้นที่มี + ค่าตีบวกของแต่ละชิ้น
   const partyOf = (p) => (p.party ? [...p.party.members] : [p]);
   const sendParty = (party) => { for (const m of party.members) send(m.ws, { t: 'party', leader: party.leader.uid, members: [...party.members].map((x) => [x.uid, x.name]) }); };
   function leaveParty(p) {
@@ -61,9 +68,9 @@ export function attachWorld(server, { db, verify, B, goblins = B.combat.lobby_go
   const lobby = { id: 'lobby', kind: 'lobby', name: 'bkk_lobby', map: LOBBY, players: new Set(), nodes: [], mobs: goblins.map(([x, y], i) => mkMob(`m${i}`, x, y, G, { respawn: true })) };
   rooms.set('lobby', lobby);
 
-  function openGate(now) {
+  function openGate(now, gi) {
     const g = makeGateE({ seed: GE.seed, mobs: GE.mobs, nodes: GE.nodes }), id = 'g' + randomUUID().slice(0, 8);
-    const room = { id, kind: 'gate_e', name: 'Gate E', map: makeMap(g.rows), players: new Set(), spawn: g.spawn, expiresAt: now + B.gates.table.E.timer_h * 3600 * 1000 };
+    const room = { id, kind: 'gate_e', name: 'Gate E', gate: gi, map: makeMap(g.rows), players: new Set(), spawn: g.spawn, expiresAt: now + B.gates.table.E.timer_h * 3600 * 1000 };
     room.mobs = [...g.mobSpawns.map(([x, y], i) => mkMob(`m${i}`, x, y, G)), mkMob('boss', g.boss.x, g.boss.y, R.boss, { boss: true })];
     room.nodes = g.nodeSpawns.map(([x, y], i) => ({ id: `n${i}`, x, y, hp: GE.mining.node_hp, max: GE.mining.node_hp, dead: false }));
     rooms.set(id, room);
@@ -178,7 +185,26 @@ export function attachWorld(server, { db, verify, B, goblins = B.combat.lobby_go
     const share = partyOf(p).filter((m) => m.room === p.room && dist(m, mob) <= B.party.share_range_tiles), n = share.length || 1; // GDD §16.6
     for (const m of share.length ? share : [p]) gainExp(m, Math.round(mob.st.exp * (1 + 0.1 * (n - 1)) / n * expMult(B, m.level, R.level)));
     if (mob.boss) { addLoot(p, GE.drops.boss.item, GE.drops.boss.qty); clearGate(p.room, now); } // solo = หัวหน้าปาร์ตี้แจกให้ตัวเอง (GDD §18.9)
+    else if (mob.brk) { if (Math.random() < GE.drops.mob.chance * B.dungeon_break.reward_mult.drop_rate) addLoot(p, GE.drops.mob.item, 1); breakKilled(p, mob, now); }
     else if (p.room.kind === 'gate_e' && Math.random() < GE.drops.mob.chance) addLoot(p, GE.drops.mob.item, 1);
+  }
+
+  function dungeonBreak(room, now) { // Gate หมดเวลาโดยไม่มีใคร clear → มอนทะลักออกมาที่ประตูในเมือง (GDD §18.8)
+    const D = B.dungeon_break, S = D.mobs.E, [gx, gy] = P.gates[room.gate] ?? [SPAWN.x, SPAWN.y];
+    const live = lobby.mobs.filter((m) => m.brk && !m.dead).length, n = Math.min(S.count, D.mob_cap - live); if (n <= 0) return;
+    const brk = { endsAt: now + D.duration_min * 60 * 1000, killers: new Set(), level: S.level }, st = { hp: S.hp, atk: S.atk, exp: G.exp * D.reward_mult.exp };
+    for (let i = 0; i < n; i++) {
+      let x = gx, y = gy; for (let k = 0; k < 20; k++) { const a = Math.random() * 7, r = 1 + Math.random() * 2.5; x = gx + Math.cos(a) * r; y = gy + Math.sin(a) * r; if (!LOBBY.blocked(x, y)) break; }
+      lobby.mobs.push(mkMob(`b${randomUUID().slice(0, 6)}`, x, y, st, { brk, respawn: false }));
+    }
+    for (const p of lobby.players) notice(p, `Dungeon Break! ${S.name} ${n} ตัวบุกออกมาจาก Gate — กำจัดให้หมดใน ${D.duration_min} นาที`);
+  }
+  function breakKilled(p, mob, now) { // ฆ่าครบทุกตัวของ break นั้น = clear: +100% EXP ของ Gate ให้คนที่ช่วยฆ่า
+    mob.brk.killers.add(p.uid);
+    if (lobby.mobs.some((m) => m.brk === mob.brk && !m.dead)) return;
+    mob.brk.endsAt = now;
+    for (const uid of mob.brk.killers) { const k = players.get(uid); if (!k) continue; const exp = Math.round(B.gates.table.E.exp_clear * expMult(B, k.level, R.level)); gainExp(k, exp); send(k.ws, { t: 'cleared', exp, bonus: 0 }); }
+    for (const o of lobby.players) notice(o, 'กำจัด Dungeon Break สำเร็จ เมืองปลอดภัยแล้ว');
   }
 
   function clearGate(room, now) { // บอสตาย = clear: EXP ทุกคนในห้อง, ค้างอยู่ได้ไม่กี่วิแล้วถูกวาร์ปออก
@@ -240,7 +266,8 @@ export function attachWorld(server, { db, verify, B, goblins = B.combat.lobby_go
           if (me.hp <= 0) me.hp = mhp; // ออกตอน HP 0 → กลับมาเต็ม (ไม่ให้ติดล้มข้าม session)
           me.look = { skin_tone: u.skin_tone, hair_style: u.hair_style, hair_color: u.hair_color, outfit: u.outfit };
           players.set(uid, me);
-          enter(me, lobby, SPAWN.x, SPAWN.y);
+          const r = resume.get(uid); resume.delete(uid);
+          if (r && Date.now() - r.at < resumeMs && rooms.get(r.room.id) === r.room) enter(me, r.room, r.x, r.y); else enter(me, lobby, SPAWN.x, SPAWN.y);
           send(ws, { t: 'hello', id: uid, x: me.x, y: me.y });
           send(ws, mePayload(me));
         } catch { ws.close(4002, 'unauthorized'); }
@@ -281,6 +308,16 @@ export function attachWorld(server, { db, verify, B, goblins = B.combat.lobby_go
       } else if (m.t === 'use' && alive(me)) { // น้ำเปล่า/ยาชูกำลัง ลด Fatigue (GDD §4.3)
         const c = B.consumables[m.item];
         if (c?.fatigue && me.items[m.item] > 0 && fatigue(me, now) > 0) { give(me, 'potion', m.item, -1); me.fatigue = Math.max(0, me.fatigue - c.fatigue); send(ws, mePayload(me)); }
+      } else if (m.t === 'look' && me.room === lobby) { // ตู้เสื้อผ้า: เปลี่ยนผิว/ผม/ชุดได้ฟรีในเมือง
+        const err = validLook(m.look, B.appearance); if (err) return notice(me, err);
+        const { skin_tone, hair_style, hair_color, outfit } = m.look; me.look = { skin_tone, hair_style, hair_color, outfit };
+        q.setLook.run(skin_tone, hair_style, hair_color, outfit, me.uid);
+        for (const o of lobby.players) send(o.ws, { t: 'look', id: me.uid, look: me.look });
+      } else if (m.t === 'equip' && alive(me) && me.room === lobby) { // สลับอาวุธจากกระเป๋า: ค่าตีบวกติดไปกับอาวุธแต่ละชิ้น
+        const w = q.weapons.all(me.uid).find((r) => r.item_id === String(m.item));
+        if (!w || w.item_id === me.weapon) return;
+        q.keepEnh.run(me.enhance, me.uid, me.weapon); me.weapon = w.item_id; me.enhance = w.enhance; q.setWeapon.run(me.weapon, me.enhance, me.uid);
+        send(ws, mePayload(me));
       } else if (m.t === 'stat') { // ลงแต้มสเตตัส (+3/เลเวล, ไม่มี respec — GDD §4.4)
         const k = { str: 'str', agi: 'agi', vit: 'vit', int: 'int_stat', per: 'per' }[m.k];
         if (!k || me.statPoints < 1) return;
@@ -292,9 +329,9 @@ export function attachWorld(server, { db, verify, B, goblins = B.combat.lobby_go
         if (price === null) return;
         if (isW && q.item.get(me.uid, item)) return notice(me, 'มีอาวุธนี้แล้ว');
         if (me.baht < price) return notice(me, 'เงินไม่พอ');
-        if (isW) { // ซื้ออาวุธ = เข้ากระเป๋า (กระเป๋าเก็บอาวุธทุกชิ้นที่มี) แล้วสวมทันที (shortcut: ยังไม่มีหน้าสลับอาวุธจากกระเป๋า + ค่าตีบวกผูกกับช่องสวม, ทำพร้อมระบบเกราะ)
+        if (isW) { // ซื้ออาวุธ = เข้ากระเป๋า (กระเป๋าเก็บอาวุธทุกชิ้นที่มี) แล้วสวมทันที (สลับชิ้นอื่นได้ที่หน้าตัวละคร)
           if (!give(me, 'weapon', item, 1)) return;
-          me.weapon = item; me.enhance = 0; q.setWeapon.run(item, 0, me.uid);
+          q.keepEnh.run(me.enhance, me.uid, me.weapon); me.weapon = item; me.enhance = 0; q.setWeapon.run(item, 0, me.uid); // ชิ้นเดิมเก็บค่าตีบวกไว้
         } else if (!give(me, 'potion', item, 1)) return;
         me.baht -= price; save(me); send(ws, { t: 'bought', item }); send(ws, mePayload(me));
       } else if (m.t === 'enhance' && alive(me) && me.room === lobby) { // ตีบวก: Rank D+, แร่เกรดตรงกับอาวุธ, สำเร็จ 100% (GDD §7.1)
@@ -346,7 +383,7 @@ export function attachWorld(server, { db, verify, B, goblins = B.combat.lobby_go
         let room = me.party && rooms.get(me.party.gate); // ปาร์ตี้เดียวกัน = instance เดียวกัน
         if (!room || room.clearedAt) {
           if ([...rooms.values()].filter((r) => r.kind === 'gate_e').length >= GE.max_instances) return notice(me, 'Gate เต็ม ลองใหม่ภายหลัง');
-          room = openGate(now); if (me.party) me.party.gate = room.id;
+          room = openGate(now, m.gate); if (me.party) me.party.gate = room.id;
         }
         enter(me, room, room.spawn.x, room.spawn.y);
       } else if (m.t === 'leave' && alive(me) && me.room.kind === 'gate_e') warpOut(me);
@@ -365,7 +402,7 @@ export function attachWorld(server, { db, verify, B, goblins = B.combat.lobby_go
 
     ws.on('close', () => {
       clearTimeout(authTimer);
-      if (me && players.get(me.uid) === me) { leaveParty(me); players.delete(me.uid); me.room.players.delete(me); save(me); }
+      if (me && players.get(me.uid) === me) { resume.set(me.uid, { room: me.room, x: me.x, y: me.y, at: Date.now() }); leaveParty(me); players.delete(me.uid); me.room.players.delete(me); save(me); }
     });
   });
 
@@ -388,12 +425,14 @@ export function attachWorld(server, { db, verify, B, goblins = B.combat.lobby_go
       if (room.kind === 'test' && now >= room.endsAt) { endRankTest(room); continue; }
       if (room.kind === 'gate_e') {
         if (now >= room.expiresAt || (room.clearedAt && now - room.clearedAt >= GE.clear_linger_sec * 1000)) {
-          if (!room.clearedAt) bcast(room, { t: 'gateFailed' }); // หมดเวลา (shortcut: ยังไม่มี Dungeon Break — Phase 4)
-          closeRoom(room); continue;
+          const failed = !room.clearedAt; if (failed) bcast(room, { t: 'gateFailed' });
+          closeRoom(room); if (failed && B.gates.low_pool.dungeon_break_if_no_clear) dungeonBreak(room, now); // หมดเวลาไม่มีใคร clear = Dungeon Break
+          continue;
         }
         if (!room.players.size) { room.emptyAt ??= now; if (now - room.emptyAt > 3000) rooms.delete(room.id); continue; }
         room.emptyAt = null;
       }
+      if (room === lobby && lobby.mobs.some((m) => m.brk && now >= m.brk.endsAt)) lobby.mobs = lobby.mobs.filter((m) => !m.brk || now < m.brk.endsAt); // break หมดเวลา/จบ = มอนหาย
       for (const m of room.mobs) {
         if (m.dummy) continue;
         if (m.dead) { if (m.respawn !== false && room.kind === 'lobby' && now >= m.respawnAt) Object.assign(m, { dead: false, hp: m.max, x: m.home.x, y: m.home.y, target: null }); continue; }
@@ -402,7 +441,7 @@ export function attachWorld(server, { db, verify, B, goblins = B.combat.lobby_go
         if (t && (t.room !== room || !alive(t) || (dist(m, m.home) > M.leash_tiles && now >= (m.tauntUntil ?? 0)))) t = null;
         if (!t) { // หาเป้าใหม่ในระยะ aggro (ไม่ไล่คนที่ล้มอยู่ — GDD §6.1)
           let best = M.aggro_tiles;
-          for (const p of room.players) if (alive(p) && dist(m, p) < best) { best = dist(m, p); t = p; }
+          for (const p of room.players) if (alive(p) && dist(m, p) < best && !(m.brk && p.level < m.brk.level - B.dungeon_break.safe_if_player_level_below_break_level_minus)) { best = dist(m, p); t = p; } // Safe Zone: เลเวลต่ำกว่ามาก = มอน break ไม่ไล่
         }
         m.target = t?.uid ?? null;
         const goal = t ?? m.home, d = dist(m, goal);
