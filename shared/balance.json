@@ -1,0 +1,304 @@
+{
+  "meta": {
+    "version": "5.1",
+    "note": "แหล่งตัวเลขเดียวของเกม (Single Source of Truth) — client และ server ต้องอ่านจากไฟล์นี้ ห้าม hardcode ตัวเลขซ้ำในโค้ด. ค่าที่ติด playtest=true ปรับได้หลังทดสอบ",
+    "currency": "THB",
+    "level_cap": 100
+  },
+
+  "classes": {
+    "Fighter":  { "str": 14, "agi": 9,  "vit": 12, "int": 6,  "per": 9,  "starter_weapon": "sword_short_e",  "main_stat": "str" },
+    "Assassin": { "str": 9,  "agi": 15, "vit": 8,  "int": 6,  "per": 12, "starter_weapon": "dagger_e",       "main_stat": "agi" },
+    "Mage":     { "str": 6,  "agi": 8,  "vit": 8,  "int": 16, "per": 12, "starter_weapon": "staff_e",        "main_stat": "int" },
+    "Tank":     { "str": 11, "agi": 7,  "vit": 16, "int": 7,  "per": 9,  "starter_weapon": "mace_e",         "main_stat": "str" },
+    "Healer":   { "str": 6,  "agi": 8,  "vit": 11, "int": 14, "per": 11, "starter_weapon": "tome_e",         "main_stat": "int" },
+    "Miner":    { "str": 12, "agi": 8,  "vit": 14, "int": 6,  "per": 10, "starter_weapon": "pickaxe_e",      "main_stat": "str" }
+  },
+  "starting_stat_total": 50,
+
+  "formulas": {
+    "max_hp": "(VIT + Level) * 20 + armor_hp",
+    "max_mp": "INT * 15",
+    "max_weight": "50 + STR * 5",
+    "effective_atk": "weapon_atk * prof * (1 + enhance * 0.05)",
+    "stat_bonus": "scaling_stat * 0.5 * prof",
+    "basic_damage": "effective_atk + stat_bonus",
+    "skill_damage": "basic_damage * skill_mult",
+    "heal": "target_max_hp * heal_pct * prof * (1 + INT / 500) * (1 + weapon_heal_bonus)",
+    "crit_rate": "min(0.50, PER * 0.005 + weapon_crit + enhance * 0.005)",
+    "crit_mult": 1.5,
+    "damage_taken": "incoming * K / (K + DEF), K = 100 + attacker_level * 20",
+    "pvp_damage_mult": 0.4,
+    "move_speed_tiles_per_sec": "4.0 * min(1.5, 1 + AGI / 400)",
+    "attack_interval_sec": "1.0 / ((1 + AGI / 500) * (1 + weapon_attack_speed))",
+    "dodge_rate": "min(0.30, AGI * 0.002)",
+    "hp_regen": "out of combat 10s: 1% MaxHP / 3s * (1 + VIT / 200); in combat: 0"
+  },
+
+  "reference_build": {
+    "note": "build ที่ใช้คำนวณ balance: ทุกเลเวลลง main_stat +2 และ VIT +1",
+    "main_per_level": 2,
+    "vit_per_level": 1
+  },
+
+  "appearance": { "skin_tones": 4, "hair_styles": 4, "hair_colors": ["#1a1a1a", "#5a3a1a", "#c9a227", "#b02a2a", "#e8e8e8"], "outfits": ["street_hoodie", "bomber_jacket", "work_shirt"] },
+  "combat": {
+    "mob": { "aggro_tiles": 3, "leash_tiles": 12, "speed_tiles_per_sec": 2.5, "attack_range_tiles": 1.2, "attack_interval_sec": 1.5, "respawn_sec": 10 },
+    "regen_idle_sec": 10,
+    "note": "lobby_goblins เว้นว่าง: ก๊อปลินอยู่ใน Gate E แล้ว (ใส่พิกัดได้ถ้าอยากมีมอนฝึกในลาน)",
+    "lobby_goblins": [],
+    "hospital": [2.5, 6.5]
+  },
+  "skills": {"Fighter": [{"id": "slash", "name": "Slash", "level": 1, "mp": 5, "cd": 2, "kind": "single", "mult": 1.5, "range": 2.5}, {"id": "whirlwind", "name": "Whirlwind", "level": 1, "mp": 20, "cd": 8, "kind": "aoe", "mult": 1.8, "radius": 2.5}], "Assassin": [{"id": "stab", "name": "Stab", "level": 1, "mp": 5, "cd": 2, "kind": "single", "mult": 1.5, "range": 2.5}, {"id": "shadow_step", "name": "Shadow Step", "level": 1, "mp": 25, "cd": 10, "kind": "teleport_strike", "mult": 2.5, "range": 3}], "Mage": [{"id": "fireball", "name": "Fireball", "level": 1, "mp": 10, "cd": 3, "kind": "single", "mult": 1.8, "range": 6}, {"id": "ice_nova", "name": "Ice Nova", "level": 1, "mp": 30, "cd": 10, "kind": "aoe", "mult": 2.0, "radius": 3, "stun": 1.5}], "Tank": [{"id": "shield_bash", "name": "Shield Bash", "level": 1, "mp": 5, "cd": 2, "kind": "single", "mult": 1.2, "range": 2.5, "stun": 0.5}, {"id": "taunt", "name": "Taunt", "level": 1, "mp": 15, "cd": 8, "kind": "taunt", "radius": 5, "sec": 5}], "Healer": [{"id": "heal", "name": "Heal", "level": 1, "mp": 15, "cd": 3, "kind": "heal", "pct": 0.15, "range": 5}, {"id": "revive", "name": "Revive", "level": 1, "mp": 40, "cd": 60, "kind": "revive", "range": 2}], "Miner": [{"id": "pick_strike", "name": "Pick Strike", "level": 1, "mp": 5, "cd": 2, "kind": "single", "mult": 1.5, "range": 2.5}]},
+  "starter_potions": 5,
+  "note_skills": "Phase 3: เฉพาะสกิลที่ปลดล็อก Lv.1 (Miner ยังไม่มี Mining Boost จนกว่าจะมีระบบขุด). ที่เหลือ Lv.10–40 ใส่ตอนทำ Tier 1 เต็ม",
+  "places": { "association": [6, 5.8], "market": [17, 5.8], "gates": [[9.5, 9.5], [14.5, 9.5]], "interact_tiles": 2.5 },
+  "gate_e": {
+    "seed": 7, "mobs": 22, "nodes": 10, "max_instances": 20, "clear_linger_sec": 30,
+    "mining": { "node_hp": 100, "swing_damage_miner": 40, "swing_damage_other": 25, "swing_cd_sec": 0.8, "range_tiles": 1.6 },
+    "drops": { "mob": { "item": "goblin_ear", "chance": 0.4 }, "boss": { "item": "goblin_ear_boss", "qty": 1 }, "node": { "item": "mana_stone_e", "qty": 1 } }
+  },
+  "items": { "goblin_ear": { "name": "หูก๊อปลิน", "price": 568 }, "goblin_ear_boss": { "name": "หูหัวหน้าก๊อปลิน", "price": 5680 }, "mana_stone_e": { "name": "หินมานา E", "price": 208 } },
+  "consumables": {
+    "mp_potion_0": { "name": "น้ำมนต์เล็ก", "price": 500, "mp": 50 },
+    "water": { "name": "น้ำเปล่า", "price": 100, "fatigue": 15 },
+    "energy_drink": { "name": "ยาชูกำลัง", "price": 3000, "fatigue": 60 }
+  },
+  "shop": { "consumables": ["mp_potion_0", "water", "energy_drink"], "weapons": ["sword_long_e", "sword_great_e", "sword_short_d", "sword_long_d", "sword_great_d"] },
+  "taxi": { "stands": [[6, 20.5], [17, 20.5]], "cooldown_sec": 30, "fare_base": 50, "fare_per_tile": 40, "fare_max": 1000,
+    "to": { "association": { "name": "สมาคมฮันเตอร์", "pos": [6, 5.8] }, "market": { "name": "ตลาด", "pos": [17, 5.8] }, "hospital": { "name": "โรงพยาบาล", "pos": [2.5, 6.5] }, "plaza": { "name": "ลานวงเวียน", "pos": [12, 13.5] } } },
+  "party": { "max": 4, "share_range_tiles": 15, "invite_range_tiles": 5, "invite_ttl_sec": 30 },
+  "movement": { "base_tiles_per_sec": 4.0, "agi_div": 400, "max_mult": 1.5 },
+  "stat_points_per_level": 3,
+
+  "exp_curve": {
+    "formula": "round3(100 * L^2.2)",
+    "round": "ปัดให้เหลือเลขนัยสำคัญ 3 หลัก",
+    "target_hours_per_level": "0.06 * L",
+    "party_share": "แต่ละคน (ในระยะ 15 tiles) ได้ mob_exp * (1 + 0.1 * (n - 1)) / n ; EXP clear Gate ได้เต็มทุกคน",
+    "level_diff_penalty": [
+      { "player_above_mob_by": 10, "mult": 0.5 },
+      { "player_above_mob_by": 20, "mult": 0.1 }
+    ]
+  },
+
+  "fatigue": {
+    "exhausted_at": 90,
+    "gain": { "basic_attack": 0.1, "skill": 0.5, "roll": 0.5, "mining_swing": 0.2 },
+    "gain_mult": "100 / (100 + VIT)",
+    "recover": { "idle_per_3s": 1, "idle_after_sec": 5, "sitting_per_1s": 1, "water": 15, "energy_drink_min": 40, "energy_drink_max": 80, "taxi": 10 }
+  },
+
+  "downed": {
+    "trigger": "โดนดาเมจถึงตาย (HP <= 0)",
+    "timer_sec": 45,
+    "move_speed_mult": 0.15,
+    "pvp_immune": true,
+    "monsters_ignore": true,
+    "repeat_window_sec": 120,
+    "repeat_rule": "ถ้าถูก revive แล้วโดนดาเมจถึงตายอีกภายใน 120 วิ = ตายทันที ไม่เข้า Downed",
+    "assist": { "who": "สมาชิก party/guild ทุกอาชีพ", "channel_sec": 10, "range_tiles": 1.5, "revive_hp_pct": 10, "cancel_on_damage": true },
+    "healer_revive_hp_pct": 30
+  },
+
+  "hospital": {
+    "free_count": 4,
+    "fee_by_hunter_rank": { "E": 2000, "D": 10000, "C": 100000, "B": 500000, "A": 1000000, "S": 3000000 },
+    "debt": { "move_speed_mult": 0.85, "income_garnish": 0.5 }
+  },
+
+  "inventory": { "slots": 30, "storage_slots": 100 },
+
+  "mp_potions": {
+    "shared_cooldown_sec": 8,
+    "tiers": [
+      { "name": "น้ำมนต์เล็ก",        "mp": 50,   "price": 500,    "level": 1 },
+      { "name": "น้ำมนต์กลาง",        "mp": 150,  "price": 2000,   "level": 10 },
+      { "name": "น้ำมนต์ใหญ่",        "mp": 400,  "price": 8000,   "level": 25 },
+      { "name": "น้ำมนต์เทพ",         "mp": 1000, "price": 30000,  "level": 40 },
+      { "name": "น้ำมนต์มหาเทพ",      "mp": 2000, "price": 80000,  "level": 55 },
+      { "name": "น้ำมนต์อมตะ",        "mp": 4000, "price": 200000, "level": 70 },
+      { "name": "น้ำมนต์วาระสุดท้าย", "mp": 8000, "price": 500000, "level": 85 }
+    ]
+  },
+
+  "hunter_ranks": {
+    "order": ["E", "D", "C", "B", "A", "S"],
+    "level_band": { "E": [1, 10], "D": [10, 20], "C": [20, 35], "B": [35, 50], "A": [50, 70], "S": [70, 100] },
+    "assessment": {
+      "duration_sec": 5,
+      "assumption": "reference build, อาวุธ rank ก่อนหน้า +5~+7, ตีปกติ 5 ครั้ง + สกิล 2 ครั้ง",
+      "requirements": {
+        "D": { "level": 10, "burst": 180 },
+        "C": { "level": 20, "burst": 400 },
+        "B": { "level": 35, "burst": 900 },
+        "A": { "level": 50, "burst": 2000 },
+        "S": { "level": 70, "burst": 6000 }
+      },
+      "class_burst_factor": { "Fighter": 1.0, "Assassin": 1.0, "Mage": 1.0, "Miner": 0.85, "Tank": 0.7, "Healer": 0.33 },
+      "playtest": true
+    }
+  },
+
+  "enhancement": {
+    "min_hunter_rank": "D",
+    "max_level": 10,
+    "success_rate": 1.0,
+    "materials": [1, 2, 4, 8, 16, 48, 144, 432, 1296, 3888],
+    "atk_bonus_per_level": 0.05,
+    "crit_bonus_per_level": 0.005
+  },
+
+  "proficiency": {
+    "labels": { "1.0": "ถนัด", "0.9": "เกือบถนัด", "0.7": "ใช้ได้", "0.6": "พอใช้", "0.5": "ค่อนข้างไม่ถนัด", "0.4": "ไม่ถนัด", "0.3": "แย่", "0.2": "ผิดสาย" },
+    "matrix": {
+      "Fighter":  { "shortsword": 1.0, "longsword": 1.0, "greatsword": 1.0, "dagger": 0.7, "staff": 0.3, "mace": 0.9, "pickaxe": 0.7, "tome": 0.3 },
+      "Assassin": { "shortsword": 0.9, "longsword": 0.7, "greatsword": 0.4, "dagger": 1.0, "staff": 0.3, "mace": 0.6, "pickaxe": 0.5, "tome": 0.3 },
+      "Mage":     { "shortsword": 0.4, "longsword": 0.3, "greatsword": 0.2, "dagger": 0.4, "staff": 1.0, "mace": 0.3, "pickaxe": 0.3, "tome": 0.7 },
+      "Tank":     { "shortsword": 1.0, "longsword": 0.9, "greatsword": 0.7, "dagger": 0.6, "staff": 0.4, "mace": 1.0, "pickaxe": 0.6, "tome": 0.4 },
+      "Healer":   { "shortsword": 0.5, "longsword": 0.4, "greatsword": 0.3, "dagger": 0.5, "staff": 0.7, "mace": 0.5, "pickaxe": 0.4, "tome": 1.0 },
+      "Miner":    { "shortsword": 0.7, "longsword": 0.6, "greatsword": 0.5, "dagger": 0.5, "staff": 0.3, "mace": 0.7, "pickaxe": 1.0, "tome": 0.3 }
+    },
+    "scaling_stat": { "shortsword": "str", "longsword": "str", "greatsword": "str", "mace": "str", "pickaxe": "str", "dagger": "agi", "staff": "int", "tome": "int" }
+  },
+
+  "weapons": {
+    "sword_short_e":  { "name": "ดาบเหล็กสั้นสนิม",  "type": "shortsword", "rank": "E", "atk": 5,    "weight": 3,  "price": 0,          "attack_speed": 0.10, "crit": 0.05 },
+    "sword_long_e":   { "name": "ดาบเหล็กฮันเตอร์",  "type": "longsword",  "rank": "E", "atk": 8,    "weight": 6,  "price": 5000 },
+    "sword_great_e":  { "name": "ดาบใหญ่ฝึกหัด",     "type": "greatsword", "rank": "E", "atk": 12,   "weight": 12, "price": 8000,       "attack_speed": -0.10, "vs_boss": 0.15 },
+    "sword_short_d":  { "name": "ดาบเหล็กกล้า",      "type": "shortsword", "rank": "D", "atk": 15,   "weight": 3,  "price": 50000,      "attack_speed": 0.10, "crit": 0.05 },
+    "sword_long_d":   { "name": "ดาบฮันเตอร์ยาว",    "type": "longsword",  "rank": "D", "atk": 22,   "weight": 7,  "price": 80000 },
+    "sword_great_d":  { "name": "ดาบใหญ่ทหาร",       "type": "greatsword", "rank": "D", "atk": 30,   "weight": 14, "price": 120000,     "attack_speed": -0.10, "vs_boss": 0.15 },
+    "sword_short_c":  { "name": "ดาบมานาสั้น",       "type": "shortsword", "rank": "C", "atk": 40,   "weight": 3,  "price": 1000000,    "attack_speed": 0.10, "crit": 0.05 },
+    "sword_long_c":   { "name": "ดาบคริสตัลยาว",     "type": "longsword",  "rank": "C", "atk": 55,   "weight": 7,  "price": 1500000,    "crit": 0.05 },
+    "sword_great_c":  { "name": "ดาบใหญ่คริสตัล",    "type": "greatsword", "rank": "C", "atk": 80,   "weight": 14, "price": 2500000,    "attack_speed": -0.10, "vs_boss": 0.15 },
+    "sword_short_b":  { "name": "ดาบรูนสั้น",        "type": "shortsword", "rank": "B", "atk": 100,  "weight": 3,  "price": 5000000,    "attack_speed": 0.10, "crit": 0.10 },
+    "sword_long_b":   { "name": "ดาบปีศาจยาว",       "type": "longsword",  "rank": "B", "atk": 150,  "weight": 8,  "price": 10000000,   "crit": 0.10, "lifesteal": 0.03 },
+    "sword_great_b":  { "name": "ดาบใหญ่ปีศาจ",      "type": "greatsword", "rank": "B", "atk": 220,  "weight": 15, "price": 20000000,   "attack_speed": -0.10, "vs_boss": 0.25 },
+    "sword_short_a":  { "name": "ดาบมังกรสั้น",      "type": "shortsword", "rank": "A", "atk": 350,  "weight": 4,  "price": 80000000,   "attack_speed": 0.15, "crit": 0.15 },
+    "sword_long_a":   { "name": "ดาบมังกรยาว",       "type": "longsword",  "rank": "A", "atk": 500,  "weight": 8,  "price": 150000000,  "crit": 0.15, "lifesteal": 0.05 },
+    "sword_great_a":  { "name": "ดาบใหญ่มังกร",      "type": "greatsword", "rank": "A", "atk": 750,  "weight": 16, "price": 250000000,  "attack_speed": -0.10, "vs_boss": 0.40 },
+    "sword_short_s":  { "name": "ดาบเงาสั้น",        "type": "shortsword", "rank": "S", "atk": 1200, "weight": 3,  "price": 2000000000, "attack_speed": 0.20, "crit": 0.25, "lifesteal": 0.08 },
+    "sword_long_s":   { "name": "ดาบสวรรค์ยาว",      "type": "longsword",  "rank": "S", "atk": 1800, "weight": 8,  "price": 3000000000, "crit": 0.25, "lifesteal": 0.10 },
+    "sword_great_s":  { "name": "ดาบทำลายล้าง",      "type": "greatsword", "rank": "S", "atk": 2800, "weight": 18, "price": 5000000000, "attack_speed": -0.05, "vs_boss": 0.60 },
+    "dagger_e":       { "name": "มีดสั้นพกพา",       "type": "dagger",     "rank": "E", "atk": 5,  "weight": 1, "price": 0, "attack_speed": 0.15, "crit": 0.10 },
+    "staff_e":        { "name": "คทาไม้ฝึกหัด",      "type": "staff",      "rank": "E", "atk": 4,  "weight": 2, "price": 0, "magic_dmg": 0.05 },
+    "tome_e":         { "name": "หนังสือสวดมนต์",    "type": "tome",       "rank": "E", "atk": 3,  "weight": 1, "price": 0, "heal": 0.10 },
+    "mace_e":         { "name": "กระบองไม้",         "type": "mace",       "rank": "E", "atk": 6,  "weight": 4, "price": 0, "stun": 0.05 },
+    "pickaxe_e":      { "name": "อีเตอร์เก่า",       "type": "pickaxe",    "rank": "E", "atk": 5,  "weight": 4, "price": 0, "mining_speed": 0.10 }
+  },
+
+  "armor_sets": {
+    "note": "ค่ารวมทั้งเซ็ต: เสื้อ 50% / หมวก 25% / รองเท้า 25%",
+    "E": { "def": 10,   "hp": 50,    "price": 3000 },
+    "D": { "def": 30,   "hp": 200,   "price": 50000 },
+    "C": { "def": 80,   "hp": 600,   "price": 900000 },
+    "B": { "def": 200,  "hp": 1500,  "price": 6000000 },
+    "A": { "def": 500,  "hp": 4000,  "price": 90000000 },
+    "S": { "def": 1200, "hp": 10000, "price": 1800000000 },
+    "playtest": true
+  },
+
+  "monsters": {
+    "note": "ค่าของ Lv กลางของแต่ละ rank. HP ปกติ ≈ ตี 4 ครั้งด้วย reference build; ATK ปกติ ≈ 6% ของ HP ผู้เล่นต่อครั้ง",
+    "E": { "level": 5,  "def": 20,  "normal": { "hp": 85,   "atk": 30,   "exp": 25  }, "elite": { "hp": 320,   "atk": 50,   "exp": 130  }, "boss": { "hp": 3200,   "atk": 100,  "exp": 500   } },
+    "D": { "level": 15, "def": 40,  "normal": { "hp": 200,  "atk": 65,   "exp": 100 }, "elite": { "hp": 750,   "atk": 110,  "exp": 500  }, "boss": { "hp": 7500,   "atk": 220,  "exp": 2000  } },
+    "C": { "level": 27, "def": 65,  "normal": { "hp": 400,  "atk": 130,  "exp": 210 }, "elite": { "hp": 1500,  "atk": 210,  "exp": 1000 }, "boss": { "hp": 15000,  "atk": 430,  "exp": 4000  } },
+    "B": { "level": 42, "def": 95,  "normal": { "hp": 950,  "atk": 250,  "exp": 350 }, "elite": { "hp": 3500,  "atk": 410,  "exp": 1800 }, "boss": { "hp": 35000,  "atk": 830,  "exp": 7000  } },
+    "A": { "level": 60, "def": 130, "normal": { "hp": 2800, "atk": 550,  "exp": 540 }, "elite": { "hp": 10000, "atk": 920,  "exp": 2700 }, "boss": { "hp": 100000, "atk": 1800, "exp": 11000 } },
+    "S": { "level": 77, "def": 165, "normal": { "hp": 9300, "atk": 1400, "exp": 730 }, "elite": { "hp": 35000, "atk": 2300, "exp": 3600 }, "boss": { "hp": 350000, "atk": 4600, "exp": 15000 } },
+    "world_boss_s": { "level": 80, "def": 200, "hp": 100000000, "atk": 6000, "exp": 200000, "regen_pct_per_sec_if_idle_30s": 1 },
+    "playtest": true
+  },
+
+  "gates": {
+    "low_pool": {
+      "ranks": ["E", "D"],
+      "instanced": true,
+      "always_open": { "E": 2, "D": 1 },
+      "respawn_after_expire_min": 5,
+      "clear_reward_per_player_per_gate": 1,
+      "dungeon_break_if_no_clear": true
+    },
+    "high_pool": {
+      "ranks": ["C", "B", "A", "S"],
+      "instanced": false,
+      "spawn_every_min": 120,
+      "max_concurrent": 3,
+      "slot_cooldown_after_clear_min": 30,
+      "distribution": { "C": 0.50, "B": 0.30, "A": 0.15, "S": 0.05 },
+      "s_max_per_24h": 1,
+      "s_fallback": "A"
+    },
+    "night_boost": { "after_hour_ict": 22, "timer_mult": 1.5 },
+    "table": {
+      "E":   { "size": 42, "value": [25000, 50000],           "party": [1, 4],   "pvp": false, "access": "open",       "timer_h": 2,  "monsters": [20, 25], "mining_nodes": 10,  "exp_clear": 3500,    "loot_avg": 30000,       "recommended_level": [1, 10] },
+      "D":   { "size": 48, "value": [75000, 130000],          "party": [2, 6],   "pvp": true,  "access": "open",       "timer_h": 4,  "monsters": [25, 30], "mining_nodes": 15,  "exp_clear": 13000,   "loot_avg": 100000,      "recommended_level": [10, 20] },
+      "C":   { "size": 54, "value": [2500000, 7800000],       "party": [4, 10],  "pvp": true,  "access": "auction",    "timer_h": 8,  "monsters": [30, 40], "mining_nodes": 20,  "exp_clear": 26000,   "loot_avg": 5000000,     "recommended_level": [20, 35] },
+      "B":   { "size": 60, "value": [13000000, 39000000],     "party": [8, 20],  "pvp": true,  "access": "auction",    "timer_h": 12, "monsters": [40, 50], "mining_nodes": 40,  "exp_clear": 45000,   "loot_avg": 25000000,    "recommended_level": [35, 50] },
+      "A":   { "size": 66, "value": [130000000, 520000000],   "party": [15, 20], "pvp": true,  "access": "auction",    "timer_h": 18, "monsters": [50, 60], "mining_nodes": 60,  "exp_clear": 70000,   "loot_avg": 300000000,   "recommended_level": [50, 70] },
+      "S":   { "size": 72, "value": [3000000000, 8000000000], "party": [20, 20], "pvp": true,  "access": "invite",     "timer_h": 24, "monsters": [60, 80], "mining_nodes": 100, "exp_clear": 300000,  "loot_avg": 5000000000,  "recommended_level": [70, 100] }
+    },
+    "endgame": {
+      "S+":  { "timer_h": 30, "exp_clear": 500000,  "loot": [5000000000, 10000000000],   "spawn_every_h": 6,  "max": 1, "recommended_level": 80 },
+      "SS":  { "timer_h": 36, "exp_clear": 800000,  "loot": [20000000000, 50000000000],  "spawn_every_h": 12, "max": 1, "recommended_level": 90 },
+      "SSS": { "timer_h": 48, "exp_clear": 1500000, "loot": [100000000000, 150000000000], "spawn_every_h": 24, "max": 1, "recommended_level": 100 }
+    },
+    "auction": { "duration_min": 5, "start_price_pct_of_value": 0.10 },
+    "completion_bonus_pct_of_loot": 0.05,
+    "guild_tax_pct": 0.05,
+    "enrage_min_per_boss": 15
+  },
+
+  "dungeon_break": {
+    "duration_min": 30,
+    "mob_cap": 20,
+    "reward_mult": { "exp": 2, "drop_rate": 2 },
+    "safe_if_player_level_below_break_level_minus": 10,
+    "mobs": {
+      "E": { "name": "Lesser Goblin",  "level": 5,  "hp": 130,    "atk": 30,   "count": 10 },
+      "D": { "name": "Goblin Warrior", "level": 15, "hp": 300,    "atk": 65,   "count": 15 },
+      "C": { "name": "Orc Soldier",    "level": 27, "hp": 600,    "atk": 130,  "count": 18 },
+      "B": { "name": "Demon Soldier",  "level": 42, "hp": 1400,   "atk": 250,  "count": 20 },
+      "A": { "name": "Demon Captain",  "level": 60, "hp": 4200,   "atk": 550,  "count": 20 },
+      "S": { "name": "Ancient Dragon", "level": 77, "hp": 50000000, "atk": 4600, "count": 1, "adds": { "hp": 2000000, "atk": 2300, "count": 5 } }
+    }
+  },
+
+  "guild": { "found_min_rank": "B", "found_cost": 50000000, "member_cap": 20 },
+
+  "pvp_drop": { "priority_sec": 15, "despawn_min": 15, "pickup_range_tiles": 1.5, "scatter_tiles": 1, "win_trade_flag_kills_per_hour": 3 },
+
+  "floor_items": { "cap_per_map": 60 },
+
+  "chat": {
+    "max_len": 200,
+    "history_per_channel": 50,
+    "channels": {
+      "global":  { "cmd": "/g",  "min_interval_sec": 3, "per_min": 20 },
+      "zone":    { "cmd": "/z",  "min_interval_sec": 1, "per_min": 30 },
+      "party":   { "cmd": "/p",  "min_interval_sec": 1 },
+      "guild":   { "cmd": "/gc", "min_interval_sec": 1 },
+      "whisper": { "cmd": "/w",  "min_interval_sec": 1 },
+      "trade":   { "cmd": "/t",  "min_interval_sec": 5 }
+    },
+    "spam_repeat_block": { "repeats": 3, "block_sec": 10 },
+    "bubble_sec": 5,
+    "banned": ["fuck", "shit", "bitch", "เหี้ย", "สัส", "ควย", "เย็ด"]
+  },
+
+  "network": {
+    "server_tick_hz": 20,
+    "broadcast_hz": 10,
+    "client_input_max_hz": 10,
+    "rate_limit_msgs_per_sec": 20,
+    "action_distance_tiles": 2.5
+  },
+
+  "persistence": {
+    "save_on": ["login", "levelup", "rankup", "disconnect", "every_5_min"],
+    "world_snapshot_every_min": 5,
+    "target_writes_per_player_hour": 30,
+    "target_reads_per_player_hour": 100
+  }
+}

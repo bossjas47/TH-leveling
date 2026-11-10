@@ -1,0 +1,21 @@
+{
+  "name": "th-leveling",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node server/index.js",
+    "test": "node --test --test-force-exit shared/formulas.test.js server/api.test.js server/world.test.js shared/lobby.test.js shared/combat.test.js server/combat.test.js server/skills.test.js server/gate.test.js server/systems.test.js",
+    "validate": "python3 tools/validate_balance.py"
+  },
+  "engines": {
+    "node": ">=22.5"
+  },
+  "dependencies": {
+    "jose": "^6.2.16",
+    "ws": "^8.22.2"
+  },
+  "devDependencies": {
+    "three": "^0.187.0"
+  }
+}
